@@ -1,0 +1,44 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - forbidigo
+    - misspell
+    - unconvert
+    - bodyclose
+    - noctx
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: '^fmt\.Print(f|ln)?$'
+          msg: "ログは log/slog を使う"
+        - pattern: '^log\.(Print|Fatal|Panic)(f|ln)?$'
+          msg: "ログは log/slog を使う"
+    errcheck:
+      exclude-functions:
+        - (*github.com/gin-gonic/gin.Context).Error
+  exclusions:
+    generated: lax
+    paths:
+      - internal/repository/sqlc
+      - internal/oapi
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/toshi1023/new-nfl-library
+  exclusions:
+    paths:
+      - internal/repository/sqlc
+      - internal/oapi

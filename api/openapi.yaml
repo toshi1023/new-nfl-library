@@ -1,0 +1,84 @@
+openapi: 3.0.3
+info:
+  title: NFL Library API
+  version: 0.1.0
+  description: NFL Library の API 仕様。エンドポイントの追加・変更は本ファイルを先に更新する。
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness チェック
+      tags: [system]
+      responses:
+        "200":
+          description: プロセスが稼働中
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness チェック（DB 接続を確認）
+      tags: [system]
+      responses:
+        "200":
+          description: 依存先に接続可能
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: 依存先に接続不可
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+
+    ErrorDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 機械可読なエラーコード
+          enum:
+            - VALIDATION_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - INTERNAL_ERROR
+            - SERVICE_UNAVAILABLE
+        message:
+          type: string
+          example: user not found

@@ -1,0 +1,4 @@
+package: oapi
+output: internal/oapi/types.gen.go
+generate:
+  models: true
