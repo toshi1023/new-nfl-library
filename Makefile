@@ -11,7 +11,7 @@ DATABASE_URL ?= postgres://app:app@localhost:5432/app?sslmode=disable
 MIGRATIONS_DIR := db/migrations
 
 .PHONY: help up down logs run dev build test test-integration lint fmt sqlc gen \
-        migrate-up migrate-down migrate-new tidy tools
+        migrate-up migrate-down migrate-new tidy tools scrape-rosters
 
 help: ## ターゲット一覧を表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -33,6 +33,11 @@ dev: ## ローカルで air によるホットリロード起動（.env を読�
 
 build: ## バイナリをビルド
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/api ./cmd/api
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/scraperosters ./cmd/scraperosters
+
+scrape-rosters: ## ロスターをスクレイプして outputs/csv/ に CSV 出力 (make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv])
+	@test -n "$(season)" || (echo "usage: make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv]" && exit 1)
+	go run ./cmd/scraperosters -season $(season) $(if $(teams),-teams $(teams)) $(if $(out),-out $(out))
 
 test: ## ユニットテスト
 	go test -race -cover ./...

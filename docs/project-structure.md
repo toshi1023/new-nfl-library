@@ -6,22 +6,26 @@
 
 ```
 .
-├── cmd/api/main.go                  エントリポイント（DI・起動・graceful shutdown）
+├── cmd/api/main.go                  API サーバーのエントリポイント（DI・起動・graceful shutdown）
+├── cmd/scraperosters/main.go        ロスタースクレイプ CLI のエントリポイント
 ├── internal/                        アプリ本体（外部から import 不可）
 │   ├── config/                      環境変数の読み込みと検証
-│   ├── domain/                      ドメインエラー（今後エンティティ・リポジトリ IF を追加）
+│   ├── domain/                      ドメインエラー・チーム定義・ロスター型とインターフェース
 │   ├── logging/                     slog ロガーの生成と ctx への格納
 │   ├── middleware/                  リクエスト ID・アクセスログ・リカバリ・JWT 認証
 │   ├── handler/                     Gin ハンドラ・エラー→HTTP 変換
 │   ├── router/                      ルート定義の集約
-│   ├── usecase/                     ビジネスロジック（未実装）
+│   ├── usecase/                     ビジネスロジック（ロスタースクレイプ）
 │   ├── repository/sqlc/             sqlc 生成コード（手編集禁止）
 │   ├── infra/postgres/              pgx 接続プール
+│   ├── infra/pfr/                   pro-football-reference.com のページ取得（chromedp）と解析（goquery）
+│   ├── infra/csvwriter/             ロスターの CSV 出力
 │   └── oapi/                        oapi-codegen 生成コード（手編集禁止）
 ├── api/                             OpenAPI 仕様と生成設定
 ├── db/migrations/                   golang-migrate 用 SQL
 ├── db/queries/                      sqlc 用 SQL
 ├── docs/                            ドキュメント
+├── outputs/csv/                     スクレイプ結果の CSV（git 管理外、実行時に自動作成）
 ├── Makefile / Dockerfile / docker-compose.yml
 ├── .air.toml / .golangci.yml / sqlc.yaml / .env.example
 └── go.mod / go.sum
@@ -57,7 +61,7 @@ HTTP → router (Gin)
 | `.golangci.yml` | golangci-lint v2 設定。標準セットに加えて `errorlint`・`forbidigo`（`fmt.Print*` / `log.Print*` を禁止し slog を強制）・`misspell`・`unconvert`・`bodyclose`・`noctx` を有効化。生成コードのディレクトリは除外。フォーマッタは gofmt + goimports（ローカル import をグループ分け）。 |
 | `sqlc.yaml` | sqlc 設定。`db/migrations` をスキーマ、`db/queries` をクエリとして読み、`internal/repository/sqlc` に pgx/v5 用コードを生成。`Querier` インターフェースも生成する（usecase のテストでモックしやすい）。 |
 | `.env.example` | `make run`（ローカル起動）用の環境変数テンプレート。`.env` にコピーして使う。docker compose では compose 側の `environment` が使われるので不要。 |
-| `.gitignore` | `tmp/`（air のビルド出力）、`bin/`、`.env`、`coverage.out` を除外。 |
+| `.gitignore` | `tmp/`（air のビルド出力）、`bin/`、`.env`、`coverage.out`、`outputs/`（スクレイプ出力）を除外。 |
 | `CLAUDE.md` | 技術スタック・レイヤー構成・コーディング規約・新機能追加手順。設計判断の一次情報。 |
 
 ---
@@ -75,6 +79,36 @@ HTTP → router (Gin)
 
 ---
 
+## `cmd/scraperosters/main.go`
+
+NFL 全チームのロスターを pro-football-reference.com からスクレイプし、CSV に一括出力する CLI。Laravel 側の `scrape:rosters` コマンドを Go に移植したもので、DB 保存の代わりにメモリ上に蓄積して最後にまとめて書き出す。
+
+```
+go run ./cmd/scraperosters -season 2024                 # 全 32 チーム → outputs/csv/2024_rosters.csv
+go run ./cmd/scraperosters -season 2024 -teams buf,nwe  # チームを絞る
+make scrape-rosters season=2024 teams=buf out=buf.csv   # → outputs/csv/buf.csv
+```
+
+CSV は常に `outputs/csv/` 配下に出力される（無ければ自動作成、git 管理外）。
+
+| フラグ | 既定 | 説明 |
+|---|---|---|
+| `-season` | 2020 | 対象シーズン。2012 以降 |
+| `-teams` | 全チーム | 略称のカンマ区切り |
+| `-out` | `<season>_rosters.csv` | 出力ファイル名（`outputs/csv/` 配下） |
+| `-delay` | 3s | チーム間の待機。連続アクセスによる遮断を避ける |
+| `-timeout` | 30s | 1 ページの取得タイムアウト |
+| `-headless` | false | 後述の理由で通常は false のまま |
+| `-dump-dir` | なし | 取得 HTML を保存（デバッグ・テストデータ作成用） |
+
+環境変数 `CHROME_WS_URL` を設定するとリモート Chrome（DevTools エンドポイント）に接続する。未設定ならローカルの Chrome を起動する。
+
+**headless で動かない理由**: スクレイプ先は Cloudflare の bot 対策（Turnstile）を使っており、headless Chrome や自動化フラグ付きの Chrome ではチャレンジ画面から先に進めないことを確認済み。画面ありで `disable-blink-features=AutomationControlled` を付けて起動すると数秒で自動通過する。実行中は Chrome のウィンドウを閉じないこと。
+
+処理の流れは main → `usecase.ScrapeRosters.Run` → チームごとに `pfr.Fetcher.FetchRoster` → 全チーム完了後に `csvwriter.Writer.Write`。途中でエラーや Ctrl+C があっても、それまでに取得した分は CSV に書き出してから終了コード 1 で終わる。
+
+---
+
 ## `internal/config/`
 
 | ファイル | 役割 |
@@ -89,6 +123,8 @@ HTTP → router (Gin)
 | ファイル | 役割 |
 |---|---|
 | `errors.go` | センチネルエラー `ErrNotFound` / `ErrConflict` / `ErrUnauthorized` / `ErrForbidden` / `ErrValidation`。usecase / repository はこれらを `fmt.Errorf("...: %w", domain.ErrNotFound)` のようにラップして返す。HTTP ステータスは意識しない。 |
+| `team.go` | `Team`（ID と URL 用略称）。`AllTeams()` が全 32 チームを既存 DB の teams.id 順に返し、`FindTeam(abbr)` で略称から引く。Laravel の `config/const.php` の `UrlTeams` / `TeamIds` に相当。 |
+| `roster.go` | `RawRosterRow`（表 1 行の文字列そのまま）、`RosterEntry`（単位換算済みの CSV 1 行）、`RosterFetcher` / `RosterWriter` インターフェース。usecase はこの 2 つのインターフェースにのみ依存する。 |
 
 今後、エンティティ・値オブジェクト・リポジトリインターフェースをこのパッケージに追加する。他の `internal` パッケージを import してはならない。
 
@@ -141,7 +177,12 @@ HTTP → router (Gin)
 
 ## `internal/usecase/`
 
-ビジネスロジックを置く場所。まだ実装はない（`.gitkeep` のみ）。`domain` のインターフェースにのみ依存し、`repository` や `infra` の具象型を知らない。テストはモックで書く。
+| ファイル | 役割 |
+|---|---|
+| `scrape_rosters.go` | `ScrapeRosters.Run(ctx, season, teams)`。シーズンの下限（2012）を検証し、チームごとに `RosterFetcher` を呼んで結果をスライスに蓄積、最後に `RosterWriter` へ一括で渡す。チーム間に待機を入れ、ctx のキャンセルにも応じる。途中で失敗しても取得済み分は書き出す。体重（lb × 0.45）と身長（feet × 30.48 + inch × 2.54）の換算はここでのみ行い、換算値は Laravel の `config/const.php` と同じ。 |
+| `scrape_rosters_test.go` | Fetcher / Writer をスタブに差し替えたテスト。正常系、途中失敗時の部分出力、キャンセル、換算関数。 |
+
+`domain` のインターフェースにのみ依存し、`repository` や `infra` の具象型を知らない。
 
 ---
 
@@ -157,6 +198,23 @@ HTTP → router (Gin)
 | `users.sql.go` | `db/queries/users.sql` から生成されたメソッド（`GetUserByID` / `GetUserByEmail` / `CreateUser`）。 |
 
 `repository` パッケージ直下には、今後 domain のリポジトリインターフェースを実装するラッパー（例: `user_repository.go`）を置く。
+
+---
+
+## `internal/infra/pfr/`
+
+| ファイル | 役割 |
+|---|---|
+| `fetcher.go` | `Fetcher`。chromedp でローカル Chrome を起動（またはリモートに接続）し、`FetchRoster` でチームごとに新しいタブを開いてロスターページを取得する。起動は PHP と同じく 3 回リトライ。ページ遷移後は JS の `querySelector` で `.is_setup #roster` の出現を 0.5 秒ごとにポーリングし、`outerHTML` を取り出す。chromedp の `Navigate` / `WaitReady` を使わないのは、Cloudflare のチャレンジ画面から本ページへ遷移する過程でフレーム追跡が狂いハングするため。失敗時はページタイトルをエラーに含め、`DumpDir` 指定時は HTML を保存する。 |
+| `parser.go` | `ParseRoster(html)`。goquery で `tbody tr` を走査し、`data-stat` 属性で列を判別して `RawRosterRow` にする。抽出規則は PHP と同一（名前は `csk` 属性を `,` で分割、生年月日は `csk` の `-` を除去、大学は最初の `<a>`、`Rook` は `0`、ドラフトはテキストを ` / ` で分割し年は `<a>` の先頭 4 文字、空ポジションは `No Data`）。ブラウザ非依存の純粋関数なので単体テストできる。 |
+| `parser_test.go` | 実ページから抽出した fixture を使ったテストと、`csk` 欠落・空セル・見出し行などのフォールバックのテスト。 |
+| `testdata/buf_2024_roster.html` | 2024 年 Buffalo Bills のロスター表（実ページから表部分のみ抽出）。 |
+
+---
+
+## `internal/infra/csvwriter/writer.go`
+
+`Writer.Write(ctx, entries)` が指定パスに CSV を書き出す（親ディレクトリが無ければ作成、既存ファイルは上書き）。`Encode(io.Writer, entries)` に分けてあるのはテストのため。列は `season, team_id, team, number, position, firstname, lastname, birthday, weight_kg, height_cm, college, experience, drafted_team, drafted_round, drafted_rank, drafted_year`。換算できなかった体重・身長は空欄。
 
 ---
 
@@ -204,6 +262,7 @@ HTTP → router (Gin)
 | `make gen` / `make sqlc` | OpenAPI から型生成 / SQL から Go コード生成 |
 | `make migrate-up` / `make migrate-down` / `make migrate-new name=xxx` | マイグレーション適用 / 1 つ戻す / ファイル作成 |
 | `make tools` | 開発ツールを `$(go env GOPATH)/bin` にインストール |
+| `make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv]` | ロスターをスクレイプして `outputs/csv/` に CSV 出力 |
 
 ## 環境変数
 
