@@ -132,9 +132,36 @@ func (f *Fetcher) Close() {
 	f.cancel()
 }
 
-// FetchRoster は指定シーズン・チームのロスターページを開き、表の行を返す。
+// FetchRoster は指定シーズン・チームのロスターページを開き、ロスター表（#roster）の行を返す。
 func (f *Fetcher) FetchRoster(ctx context.Context, season int, team domain.Team) ([]domain.RawRosterRow, error) {
-	url := fmt.Sprintf(baseURL, team.Abbr, season)
+	html, url, err := f.fetchRosterPageHTML(ctx, season, team)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := ParseRoster(html)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", url, err)
+	}
+	return rows, nil
+}
+
+// FetchStarters は指定シーズン・チームのロスターページを開き、スターター表（#starters）の行を返す。
+// ロスター表と同じ 1 ページに両方の表があるため、取得処理は FetchRoster と共通（fetchRosterPageHTML）。
+func (f *Fetcher) FetchStarters(ctx context.Context, season int, team domain.Team) ([]domain.RawStarterRow, error) {
+	html, url, err := f.fetchRosterPageHTML(ctx, season, team)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := ParseStarters(html)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", url, err)
+	}
+	return rows, nil
+}
+
+// fetchRosterPageHTML はロスターページ（ロスター表とスターター表の両方を含む）を開き、HTML 全体を返す。
+func (f *Fetcher) fetchRosterPageHTML(ctx context.Context, season int, team domain.Team) (html, url string, err error) {
+	url = fmt.Sprintf(baseURL, team.Abbr, season)
 
 	// チームごとに新しいタブを開き、終わったら閉じる
 	tabCtx, cancelTab := chromedp.NewContext(f.browserCtx)
@@ -143,20 +170,20 @@ func (f *Fetcher) FetchRoster(ctx context.Context, season int, team domain.Team)
 	stop := context.AfterFunc(ctx, cancelTab)
 	defer stop()
 
-	f.logger.Debug("fetching roster", slog.String("url", url))
+	f.logger.Debug("fetching roster page", slog.String("url", url))
 
 	// ページ遷移と表の表示待ちにはタイムアウトを付ける。タブ自体（tabCtx）は生かしておき、
 	// 失敗時に診断用の HTML を取り出せるようにする。
 	waitCtx, cancelWait := context.WithTimeout(tabCtx, f.opts.PageTimeout)
 	defer cancelWait()
 
-	html, err := f.loadRosterHTML(waitCtx, url)
+	html, err = f.loadRosterHTML(waitCtx, url)
 	if err != nil {
 		title := f.diagnose(tabCtx, team.Abbr, season)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("fetch %s: roster table did not appear within %s (page title %q): %w", url, f.opts.PageTimeout, title, err)
+			return "", url, fmt.Errorf("fetch %s: roster table did not appear within %s (page title %q): %w", url, f.opts.PageTimeout, title, err)
 		}
-		return nil, fmt.Errorf("fetch %s (page title %q): %w", url, title, err)
+		return "", url, fmt.Errorf("fetch %s (page title %q): %w", url, title, err)
 	}
 
 	if f.opts.DumpDir != "" {
@@ -164,12 +191,7 @@ func (f *Fetcher) FetchRoster(ctx context.Context, season int, team domain.Team)
 			f.logger.Warn("dump html failed", slog.Any("err", err))
 		}
 	}
-
-	rows, err := ParseRoster(html)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", url, err)
-	}
-	return rows, nil
+	return html, url, nil
 }
 
 // pollInterval は表の出現を確認する間隔。

@@ -7,28 +7,40 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash)
-VALUES ($1, $2)
-RETURNING id, email, password_hash, created_at, updated_at
+INSERT INTO users (name, email, password, favorite_season, favorite_team)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, email, email_verified_at, password, remember_token, favorite_season, favorite_team, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	Email        string
-	PasswordHash string
+	Name           string
+	Email          string
+	Password       string
+	FavoriteSeason *int32
+	FavoriteTeam   *int32
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (*User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Name,
+		arg.Email,
+		arg.Password,
+		arg.FavoriteSeason,
+		arg.FavoriteTeam,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
 		&i.Email,
-		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.Password,
+		&i.RememberToken,
+		&i.FavoriteSeason,
+		&i.FavoriteTeam,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -36,7 +48,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (*User, 
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, updated_at FROM users
+SELECT id, name, email, email_verified_at, password, remember_token, favorite_season, favorite_team, created_at, updated_at FROM users
 WHERE email = $1
 `
 
@@ -45,8 +57,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (*User, erro
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
 		&i.Email,
-		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.Password,
+		&i.RememberToken,
+		&i.FavoriteSeason,
+		&i.FavoriteTeam,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -54,17 +71,22 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (*User, erro
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at, updated_at FROM users
+SELECT id, name, email, email_verified_at, password, remember_token, favorite_season, favorite_team, created_at, updated_at FROM users
 WHERE id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (*User, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id int32) (*User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
 		&i.Email,
-		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.Password,
+		&i.RememberToken,
+		&i.FavoriteSeason,
+		&i.FavoriteTeam,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -7,6 +7,7 @@ type Team struct {
 }
 
 // AllTeams は全 32 チームを ID 順に返す。並びは既存の teams テーブルと同じ。
+// 32 チームの略称はスクレイプ先の URL に使われるものと同じ。
 func AllTeams() []Team {
 	return []Team{
 		{1, "buf"}, {2, "nwe"}, {3, "mia"}, {4, "nyj"}, // AFC 東

@@ -11,7 +11,7 @@ DATABASE_URL ?= postgres://app:app@localhost:5432/app?sslmode=disable
 MIGRATIONS_DIR := db/migrations
 
 .PHONY: help up down logs run dev build test test-integration lint fmt sqlc gen \
-        migrate-up migrate-down migrate-new tidy tools scrape-rosters
+        migrate-up migrate-down migrate-new tidy tools scrape-rosters scrape-starters seed
 
 help: ## ターゲット一覧を表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -34,10 +34,16 @@ dev: ## ローカルで air によるホットリロード起動（.env を読�
 build: ## バイナリをビルド
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/api ./cmd/api
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/scraperosters ./cmd/scraperosters
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/scrapestarters ./cmd/scrapestarters
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/seed ./cmd/seed
 
 scrape-rosters: ## ロスターをスクレイプして outputs/csv/ に CSV 出力 (make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv])
 	@test -n "$(season)" || (echo "usage: make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv]" && exit 1)
 	go run ./cmd/scraperosters -season $(season) $(if $(teams),-teams $(teams)) $(if $(out),-out $(out))
+
+scrape-starters: ## スターターをスクレイプして outputs/csv/ に CSV 出力 (make scrape-starters season=2024 [teams=buf,nwe] [out=x.csv])
+	@test -n "$(season)" || (echo "usage: make scrape-starters season=2024 [teams=buf,nwe] [out=x.csv]" && exit 1)
+	go run ./cmd/scrapestarters -season $(season) $(if $(teams),-teams $(teams)) $(if $(out),-out $(out))
 
 test: ## ユニットテスト
 	go test -race -cover ./...
@@ -62,6 +68,9 @@ migrate-up: ## マイグレーション適用
 
 migrate-down: ## マイグレーションを 1 つ戻す
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down 1
+
+seed: ## マスタデータを投入（データが無いテーブルのみ）。force=1 で TRUNCATE してから投入し直す
+	@set -a; [ -f .env ] && . ./.env; set +a; DATABASE_URL="$(DATABASE_URL)" go run ./cmd/seed $(if $(force),-force)
 
 migrate-new: ## マイグレーションファイル作成 (make migrate-new name=xxx)
 	@test -n "$(name)" || (echo "usage: make migrate-new name=xxx" && exit 1)

@@ -50,7 +50,7 @@ func main() {
 }
 
 func run() error {
-	// ---- フラグ ----
+	// ---- フラグ(フラグ名, デフォルト値, 説明) ※例：go run ./cmd/scraperosters -season 2024 -teams buf,nwe -delay 5s ----
 	var (
 		season   = flag.Int("season", defaultSeason, "対象シーズン（2012 以降）")
 		teamsArg = flag.String("teams", "", "対象チーム略称のカンマ区切り（例: buf,nwe）。省略時は全 32 チーム")
@@ -60,6 +60,7 @@ func run() error {
 		headless = flag.Bool("headless", false, "Chrome を headless で起動する（スクレイプ先の bot 対策により headless では取得できないため通常は false）")
 		dumpDir  = flag.String("dump-dir", "", "取得した HTML を保存するディレクトリ（デバッグ用）")
 	)
+	// コマンドの引数で渡された値をフラグにセットする。フラグの既定値は上記の変数初期化で設定済み。
 	flag.Parse()
 
 	// ---- ロガー ----
@@ -125,6 +126,7 @@ func run() error {
 
 // resolveTeams はカンマ区切りの略称を Team に変換する。空なら全チーム。
 func resolveTeams(arg string) ([]domain.Team, error) {
+	// 引数でチームの指定をしていない場合は全チームを返す。
 	if strings.TrimSpace(arg) == "" {
 		return domain.AllTeams(), nil
 	}

@@ -8,10 +8,234 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Formation struct {
+	// ID
+	ID int32
+	// 攻守フラグ (true: Offence, false: Defence)
+	Odflg bool
+	// 名前
+	Name      string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type FoulRule struct {
+	// ID
+	ID int32
+	// 英語表記
+	EnglishName string
+	// 日本語表記
+	JapaneseName string
+	// 説明
+	Description string
+	// 攻守ステータス (0: 共通, 1: 攻撃, 2: 守備, 3: キック, 99: 全て)
+	StatusType int32
+	// 罰則ヤード
+	YardInfo int32
+	// ダウンの喪失フラグ
+	LossofdownFlg bool
+	// 自動ファーストダウン更新フラグ
+	AfFlg bool
+	// ゲームクロックの減算フラグ
+	ClockFlg bool
+	// 退場フラグ
+	ExitFlg   bool
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type OriginRoster struct {
+	// ID
+	ID int32
+	// シーズン
+	Season int32
+	// teamsのID
+	TeamID int32
+	// 名前
+	Firstname *string
+	// 苗字
+	Lastname *string
+	// 生年月日
+	Birthday *string
+	// 身長
+	Height pgtype.Numeric
+	// 体重
+	Weight pgtype.Numeric
+	// 大学
+	College *string
+	// ドラフトチーム
+	DraftedTeam *string
+	// ドラフト巡回数
+	DraftedRound *string
+	// ドラフト全体順位
+	DraftedRank *string
+	// ドラフト年
+	DraftedYear *int32
+	// ポジション名
+	PositionName string
+	// 背番号
+	Number *int32
+	// プロ経験年数
+	Experience *int32
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type PfRelation struct {
+	// ID
+	ID int32
+	// formationsのID
+	FormationID int32
+	// positionsのcategory
+	PositionCategory int32
+	// positionsのabstract_category
+	AbstractCategory int32
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type Player struct {
+	// ID
+	ID int32
+	// 名前
+	Firstname string
+	// 苗字
+	Lastname string
+	// 生年月日
+	Birthday string
+	// 身長
+	Height pgtype.Numeric
+	// 体重
+	Weight pgtype.Numeric
+	// 大学
+	College *string
+	// ドラフトチーム
+	DraftedTeam *string
+	// ドラフト巡回数
+	DraftedRound *string
+	// ドラフト全体順位
+	DraftedRank *string
+	// ドラフト年
+	DraftedYear *int32
+	// 画像名
+	ImageFile *string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Position struct {
+	// ID
+	ID int32
+	// 抽象カテゴリー
+	AbstractCategory int32
+	// カテゴリー
+	Category int32
+	// 名前
+	Name string
+	// 攻守フラグ (true: Offence, false: Defence)
+	Odflg     bool
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Roster struct {
+	// ID
+	ID int32
+	// シーズン
+	Season int32
+	// teamsのID
+	TeamID int32
+	// playersのID
+	PlayerID int32
+	// positionsのID
+	PositionID int32
+	// 背番号
+	Number *int32
+	// 能力値
+	Rating *int32
+	// プロ経験年数
+	Experience *int32
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type Setting struct {
+	// usersのID
+	UserID int32
+	// 設定の識別子 (1: シーズン選択を表示しない, 2: チーム選択を表示しない ...)
+	SettingID int32
+	// 設定のフラグ
+	Flg       bool
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Starter struct {
+	// ID
+	ID int32
+	// シーズン
+	Season int32
+	// 攻守フラグ (true: Offence, false: Defence)
+	Odflg bool
+	// rostersのID
+	RosterID  int32
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Team struct {
+	// ID
+	ID int32
+	// 拠点名
+	City string
+	// チーム名
+	Name string
+	// 所属カンファレンス (1: AFC, 2: NFC)
+	Conference int16
+	// 所属地区 (1: 東, 2: 北, 3: 南, 4: 西)
+	Area int16
+	// 画像名
+	ImageFile *string
+	// 背景用画像名
+	BackImageFile *string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type TfRelation struct {
+	// ID
+	ID int32
+	// シーズン
+	Season int32
+	// teamsのID
+	TeamID int32
+	// 攻守フラグ (true: Offence, false: Defence)
+	Odflg bool
+	// formationsのID
+	FormationID int32
+	// 結合フラグ (pf_relationsとpositionsをabstract_categoryで結合するかどうか)
+	AbstractFlg bool
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
 type User struct {
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash string
+	// ID
+	ID int32
+	// ユーザ名
+	Name string
+	// メールアドレス
+	Email string
+	// メールアドレス(確認用)
+	EmailVerifiedAt pgtype.Timestamptz
+	// パスワード
+	Password string
+	// ログイン時間維持用トークン
+	RememberToken *string
+	// お気に入りシーズン
+	FavoriteSeason *int32
+	// お気に入りチーム(teamsのid)
+	FavoriteTeam *int32
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 }

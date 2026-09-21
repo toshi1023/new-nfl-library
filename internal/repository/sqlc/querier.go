@@ -6,14 +6,28 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (*User, error)
+	FormationsExist(ctx context.Context) (bool, error)
+	FoulRulesExist(ctx context.Context) (bool, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	GetUserByID(ctx context.Context, id pgtype.UUID) (*User, error)
+	GetUserByID(ctx context.Context, id int32) (*User, error)
+	InsertFormations(ctx context.Context, arg []InsertFormationsParams) (int64, error)
+	InsertFoulRules(ctx context.Context, arg []InsertFoulRulesParams) (int64, error)
+	InsertPfRelations(ctx context.Context, arg []InsertPfRelationsParams) (int64, error)
+	InsertPositions(ctx context.Context, arg []InsertPositionsParams) (int64, error)
+	InsertSettings(ctx context.Context, arg []InsertSettingsParams) (int64, error)
+	InsertTeams(ctx context.Context, arg []InsertTeamsParams) (int64, error)
+	ListFormations(ctx context.Context) ([]*Formation, error)
+	PfRelationsExist(ctx context.Context) (bool, error)
+	PositionsExist(ctx context.Context) (bool, error)
+	SettingsExist(ctx context.Context) (bool, error)
+	TeamsExist(ctx context.Context) (bool, error)
+	// シードコマンド（cmd/seed）専用のクエリ。
+	TruncateSeedTables(ctx context.Context) error
+	UsersExist(ctx context.Context) (bool, error)
 }
 
 var _ Querier = (*Queries)(nil)
