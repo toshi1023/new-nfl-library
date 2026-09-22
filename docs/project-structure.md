@@ -10,6 +10,7 @@
 ├── cmd/scraperosters/main.go        ロスタースクレイプ CLI のエントリポイント
 ├── cmd/scrapestarters/main.go       スタータースクレイプ CLI のエントリポイント
 ├── cmd/seed/main.go                 マスタデータ投入 CLI のエントリポイント
+├── cmd/importrosters/main.go        CSV → players/rosters 反映 CLI のエントリポイント
 ├── internal/                        アプリ本体（外部から import 不可）
 │   ├── config/                      環境変数の読み込みと検証
 │   ├── domain/                      ドメインエラー・チーム定義・ポジション/反則の定数・ロスター型とインターフェース
@@ -20,6 +21,7 @@
 │   ├── usecase/                     ビジネスロジック（ロスタースクレイプ）
 │   ├── repository/sqlc/             sqlc 生成コード（手編集禁止）
 │   ├── seed/                        マスタデータの定義と投入ロジック（Laravel の database/seeders 相当）
+│   ├── rosterimport/                CSV から players / rosters を生成するロジック
 │   ├── infra/postgres/              pgx 接続プール
 │   ├── infra/pfr/                   pro-football-reference.com のページ取得（chromedp）と解析（goquery）。ロスター表・スターター表の両方を扱う
 │   ├── infra/csvwriter/             ロスターの CSV 出力
@@ -149,6 +151,28 @@ make scrape-starters season=2024 teams=buf out=buf.csv
 - DB 依存を削除。Laravel は roster_id を突き合わせて `starters` テーブルへ保存し、`rosters.position_id` も更新していたが、CSV 出力では roster との紐付けを season/team/firstname/lastname で表現し、DB の更新は行わない。
 - 1 チームごとに 2 回ページを取得していた `scrape:rosters` と `scrape:starters` の Laravel 実装と異なり、Go 側では roster 用と starters 用で fetch のたびにページを取り直す設計は同じだが、内部の取得ロジック自体は共通化されている（無駄なコード重複を避けるため）。
 
+## `cmd/importrosters/main.go`
+
+`cmd/scraperosters` が出力した CSV を読み込み、players / rosters テーブルへ反映する CLI。Laravel の `ScrapeRoster`（DB 書き込み部分。スクレイピング部分は既に `cmd/scraperosters` へ移植済み）に相当する。
+
+```
+go run ./cmd/importrosters -csv outputs/csv/2024_rosters.csv
+make import-rosters csv=outputs/csv/2024_rosters.csv
+make import-rosters csv=outputs/csv/2024_rosters.csv strict=1
+```
+
+事前に `make seed` で `teams` / `positions` が投入されている必要がある（無ければ `positions table is empty` 等のエラーになる）。
+
+処理は `internal/rosterimport.Importer.Run` が担う。1 トランザクションで全行を処理し、途中で回復不能なエラーが起きた場合は何も反映されない。
+
+1. `positions` を最初に全件読み込み、名前 → id のマップを作る（行ごとに問い合わせない）
+2. 行ごとに `firstname + lastname + birthday` で既存 player を検索。無ければ作成（既存が見つかった場合は CSV の値で上書きしない）
+3. `rosters` を `season, team_id, player_id` の一意制約を使って `INSERT ... ON CONFLICT DO UPDATE` で upsert する
+
+**未知のポジションの扱い**: 既定ではその行を `WARN` ログに残してスキップし、続行する（`Result.Skipped` に集計）。`-strict` を付けると Laravel と同じように即時中断する。実データでは pro-football-reference.com 特有の複合表記（例 `FB/DL`）が正規のポジション名に含まれないことがあるため、`internal/domain/position_data.go` にマスタを追加して解決するのが本来の直し方で、スキップは最終手段。
+
+`internal/rosterimport` は `internal/usecase` を経由しない。CLAUDE.md の「usecase は domain のインターフェースにのみ依存する」という制約は HTTP API のビジネスロジック向けで、`internal/seed` と同様、CLI 専用の import ツールとして sqlc を直接使う（domain 側の repository インターフェースは用意しない）。
+
 ---
 
 ## `internal/config/`
@@ -168,7 +192,7 @@ make scrape-starters season=2024 teams=buf out=buf.csv
 | `team.go` | `Team`（ID と URL 用略称）。`AllTeams()` が全 32 チームを既存 DB の teams.id 順に返し、`FindTeam(abbr)` で略称から引く。Laravel の `config/const.php` の `UrlTeams` / `TeamIds` に相当。 |
 | `roster.go` | `RawRosterRow`（表 1 行の文字列そのまま）、`RosterEntry`（単位換算済みの CSV 1 行）、`RosterFetcher` / `RosterWriter` インターフェース。usecase はこの 2 つのインターフェースにのみ依存する。 |
 | `position.go` | ポジションのカテゴリ（`CategoryQB` など）と抽象カテゴリ（`AbstractCategoryQB` など）の定数。Laravel の `config/const.php` の `Category` / `AbstCate` と同じ値。 |
-| `position_data.go` | ポジションマスタ本体（84 件）。`AllPositions()`、名前からカテゴリを引く `PositionCategory(name)`、攻撃側かどうかを返す `IsOffenceCategory(category)`。`internal/seed`（DB 投入）と `cmd/scrapestarters`（odflg 判定）の両方から参照される唯一の定義元。 |
+| `position_data.go` | ポジションマスタ本体（85 件）。`AllPositions()`、名前からカテゴリを引く `PositionCategory(name)`、攻撃側かどうかを返す `IsOffenceCategory(category)`。`internal/seed`（DB 投入）・`cmd/scrapestarters`（odflg 判定）・`cmd/importrosters`（position_id 解決）から参照される唯一の定義元。Laravel の元データに無かった `FB/DL`（実データで見つかった複合ポジション）を追加している。 |
 | `foul_rule.go` | 反則ルールの攻守ステータス定数（`FoulStatusCommon` など）。 |
 | `starter.go` | `RawStarterRow`（スターター表 1 行）、`StarterEntry`（CSV 1 行）、`StarterFetcher` / `StarterWriter` インターフェース。 |
 
@@ -241,6 +265,7 @@ make scrape-starters season=2024 teams=buf out=buf.csv
 | `seeder.go` | `Seeder.Run(ctx, Options)`。テーブルごとに「既に行があればスキップ」を判定し、sqlc の `:copyfrom`（pgx の COPY）で一括投入する。formations は投入後に id を読み直して Key → id の対応を作り、pf_relations の外部キーに使う。root ユーザーのパスワードは bcrypt でハッシュする（Laravel の `Hash::make` と互換）。 |
 | `teams_data.go` | 32 チーム。順序は `domain.AllTeams` の ID と一致。 |
 | `positions_data.go` | `domain.AllPositions()` を sqlc の投入用パラメータに変換するだけの薄いファイル。実データは `internal/domain/position_data.go` にある（重複を避けるため）。 |
+| `data_test.go` | 件数（85 件）などの検証。`FB/DL` 追加分を反映済み。 |
 | `formations_data.go` | フォーメーション 36 件。`Key` は Laravel の `Formationid` のキーで、テーブルには保存しない。Laravel 側で 21 件目の名前が `Nickel(LCB)` と重複していたのを `Nickel(RCB)` に修正している。 |
 | `pf_relations_data.go` | フォーメーションとポジションカテゴリの関係 374 件。フォーメーションは `Key` で参照。 |
 | `foul_rules_data.go` | 反則ルール 34 件。 |
@@ -248,6 +273,15 @@ make scrape-starters season=2024 teams=buf out=buf.csv
 | `seeder_integration_test.go` | `-tags integration` で実際の Postgres に対して force 投入 → 再実行でスキップされることを検証。 |
 
 `*_data.go` は Laravel のシーダーからスクリプトで機械変換したもの。以降は手で編集してよい。
+
+---
+
+## `internal/rosterimport/`
+
+| ファイル | 役割 |
+|---|---|
+| `importer.go` | `Importer.Run(ctx, entries, Options)`。CSV から読み込んだ `[]domain.RosterEntry` を 1 トランザクションで players / rosters に反映する。`positions` は最初に全件読み込んでキャッシュする。player は firstname+lastname+birthday で重複判定（見つかれば既存値を保持、CSV で上書きしない）。roster は `season, team_id, player_id` の UNIQUE 制約を使って upsert する。未知のポジションは既定でスキップ（`Options.Strict` で即時中断に変更可）。 |
+| `importer_integration_test.go` | `-tags integration` で実際の Postgres に対して新規作成・再実行時の冪等性（player 再利用・roster 更新）・未知ポジションの扱いを検証。 |
 
 ---
 
@@ -262,6 +296,7 @@ make scrape-starters season=2024 teams=buf out=buf.csv
 | `querier.go` | 全クエリのインターフェース `Querier`。repository のテストでモック対象にできる。 |
 | `users.sql.go` | `db/queries/users.sql` から生成されたメソッド（`GetUserByID` / `GetUserByEmail` / `CreateUser`）。 |
 | `seed.sql.go` / `copyfrom.go` | `db/queries/seed.sql` から生成。存在チェック（`TeamsExist` など）、`TruncateSeedTables`、`ListFormations`、および `:copyfrom` による一括 INSERT（`InsertTeams` など。pgx の COPY プロトコルを使う）。 |
+| `rosterimport.sql.go` | `db/queries/rosterimport.sql` から生成。`GetPlayerByIdentity`、`CreatePlayer`、`ListPositions`、`UpsertRoster`（`ON CONFLICT ... DO UPDATE`）。 |
 
 `repository` パッケージ直下には、今後 domain のリポジトリインターフェースを実装するラッパー（例: `user_repository.go`）を置く。
 
@@ -284,6 +319,8 @@ make scrape-starters season=2024 teams=buf out=buf.csv
 `Writer.Write(ctx, entries)` がロスターを指定パスの CSV に書き出す（親ディレクトリが無ければ作成、既存ファイルは上書き）。`Encode(io.Writer, entries)` に分けてあるのはテストのため。列は `season, team_id, team, number, position, firstname, lastname, birthday, weight_kg, height_cm, college, experience, drafted_team, drafted_round, drafted_rank, drafted_year`。換算できなかった体重・身長は空欄。
 
 `StartersWriter.Write(ctx, entries)` がスターターを同様に書き出す。列は `season, team_id, team, position, firstname, lastname, odflg`。ファイル I/O（ディレクトリ作成・生成・クローズ）は `file.go` の `writeFile` に共通化してあり、両方の Writer から使われている。
+
+`decoder.go` は逆方向。`ReadRosterEntriesFile(path)` / `DecodeRosterEntries(io.Reader)` が `Encode` の書式（ヘッダ行 + 列順固定）を読み戻し `[]domain.RosterEntry` にする。`cmd/importrosters` が使う。
 
 ---
 
@@ -339,6 +376,7 @@ Laravel には無かった外部キー制約と検索用インデックスを追
 |---|---|
 | `users.sql` | ユーザーの取得・作成。`-- name: Xxx :one` 形式のコメントでメソッド名と戻り値の種類を指定する。 |
 | `seed.sql` | シードコマンド専用。存在チェック、TRUNCATE、`:copyfrom` の一括 INSERT。 |
+| `rosterimport.sql` | `cmd/importrosters` 専用。player の検索/作成、positions 全件取得、roster の upsert。 |
 
 新しいマイグレーションは `make migrate-new name=xxx` で連番ファイルを作成する。up / down は必ずセットで書く。sqlc はマイグレーションファイルからスキーマを読むので、テーブル追加後に `make sqlc` を実行する。
 
@@ -358,6 +396,7 @@ Laravel には無かった外部キー制約と検索用インデックスを追
 | `make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv]` | ロスターをスクレイプして `outputs/csv/` に CSV 出力 |
 | `make scrape-starters season=2024 [teams=buf,nwe] [out=x.csv]` | スターターをスクレイプして `outputs/csv/` に CSV 出力 |
 | `make seed [force=1]` | マスタデータを投入 |
+| `make import-rosters csv=x.csv [strict=1]` | CSV から players / rosters を生成 |
 
 ## 環境変数
 

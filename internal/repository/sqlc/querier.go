@@ -9,9 +9,12 @@ import (
 )
 
 type Querier interface {
+	CreatePlayer(ctx context.Context, arg CreatePlayerParams) (*Player, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (*User, error)
 	FormationsExist(ctx context.Context) (bool, error)
 	FoulRulesExist(ctx context.Context) (bool, error)
+	// cmd/importrosters（outputs/csv/*.csv から players / rosters を生成するコマンド）専用のクエリ。
+	GetPlayerByIdentity(ctx context.Context, arg GetPlayerByIdentityParams) (*Player, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id int32) (*User, error)
 	InsertFormations(ctx context.Context, arg []InsertFormationsParams) (int64, error)
@@ -21,12 +24,14 @@ type Querier interface {
 	InsertSettings(ctx context.Context, arg []InsertSettingsParams) (int64, error)
 	InsertTeams(ctx context.Context, arg []InsertTeamsParams) (int64, error)
 	ListFormations(ctx context.Context) ([]*Formation, error)
+	ListPositions(ctx context.Context) ([]*Position, error)
 	PfRelationsExist(ctx context.Context) (bool, error)
 	PositionsExist(ctx context.Context) (bool, error)
 	SettingsExist(ctx context.Context) (bool, error)
 	TeamsExist(ctx context.Context) (bool, error)
 	// シードコマンド（cmd/seed）専用のクエリ。
 	TruncateSeedTables(ctx context.Context) error
+	UpsertRoster(ctx context.Context, arg UpsertRosterParams) (*Roster, error)
 	UsersExist(ctx context.Context) (bool, error)
 }
 

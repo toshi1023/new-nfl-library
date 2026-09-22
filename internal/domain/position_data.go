@@ -25,6 +25,8 @@ var allPositions = []Position{
 	{AbstractCategory: AbstractCategoryRB, Category: CategoryHB, Name: "HB", Odflg: true},
 	// FB
 	{AbstractCategory: AbstractCategoryRB, Category: CategoryFB, Name: "FB", Odflg: true},
+	// FB/DL([chargers]Scott Matlock。他の combo と同様、先頭のポジション（FB）のカテゴリを採用)
+	{AbstractCategory: AbstractCategoryRB, Category: CategoryFB, Name: "FB/DL", Odflg: true},
 	// WR
 	{AbstractCategory: AbstractCategoryWR, Category: CategoryWR, Name: "WR", Odflg: true},
 	// WR/RB([saints]Ty Montgomery)

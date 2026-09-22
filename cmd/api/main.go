@@ -63,7 +63,7 @@ func run() error {
 	}
 
 	// SIGINT（Ctrl+C）/ SIGTERM（docker stop 等）を受け取るとキャンセルされる ctx を作る。
-	// この ctx は DB 接続などの初期化にも渡し、起動途中でもシグナルで中断できるようにする。
+	// この ctx は DB 接続などの初期化にも渡し、起動途中やデータ処理中でもシグナルで中断できるようにする。
 	// stop() を defer しておくことで、run 終了時にシグナルハンドラを解除する。
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
