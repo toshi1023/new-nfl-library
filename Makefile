@@ -11,7 +11,7 @@ DATABASE_URL ?= postgres://app:app@localhost:5432/app?sslmode=disable
 MIGRATIONS_DIR := db/migrations
 
 .PHONY: help up down logs run dev build test test-integration lint fmt sqlc gen \
-        migrate-up migrate-down migrate-new tidy tools scrape-rosters scrape-starters seed import-rosters
+        migrate-up migrate-down migrate-new tidy tools scrape-rosters scrape-starters seed import-rosters import-madden import-data
 
 help: ## ターゲット一覧を表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -37,6 +37,8 @@ build: ## バイナリをビルド
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/scrapestarters ./cmd/scrapestarters
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/seed ./cmd/seed
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/importrosters ./cmd/importrosters
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/importmadden ./cmd/importmadden
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/importdata ./cmd/importdata
 
 scrape-rosters: ## ロスターをスクレイプして outputs/csv/ に CSV 出力 (make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv])
 	@test -n "$(season)" || (echo "usage: make scrape-rosters season=2024 [teams=buf,nwe] [out=x.csv]" && exit 1)
@@ -76,6 +78,12 @@ seed: ## マスタデータを投入（データが無いテーブルのみ）�
 import-rosters: ## CSV から players / rosters を生成 (make import-rosters csv=outputs/csv/2024_rosters.csv [strict=1])
 	@test -n "$(csv)" || (echo "usage: make import-rosters csv=outputs/csv/2024_rosters.csv [strict=1]" && exit 1)
 	@set -a; [ -f .env ] && . ./.env; set +a; DATABASE_URL="$(DATABASE_URL)" go run ./cmd/importrosters -csv $(csv) $(if $(strict),-strict)
+
+import-madden: ## Madden NFL 評価CSVで rosters を更新 (make import-madden [season=2024] [dir=path] [strict=1])。season 省略時は dir（既定 db/data/madden）配下の全シーズンを一括処理
+	@set -a; [ -f .env ] && . ./.env; set +a; DATABASE_URL="$(DATABASE_URL)" go run ./cmd/importmadden $(if $(season),-season $(season)) $(if $(dir),-dir $(dir)) $(if $(strict),-strict)
+
+import-data: ## db/data の CSV を一括投入 (make import-data [type=rosters|starters|madden|all] [season=2024] [strict=1])
+	@set -a; [ -f .env ] && . ./.env; set +a; DATABASE_URL="$(DATABASE_URL)" go run ./cmd/importdata $(if $(type),-type $(type)) $(if $(season),-season $(season)) $(if $(strict),-strict)
 
 migrate-new: ## マイグレーションファイル作成 (make migrate-new name=xxx)
 	@test -n "$(name)" || (echo "usage: make migrate-new name=xxx" && exit 1)

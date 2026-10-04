@@ -155,8 +155,10 @@ type Roster struct {
 	Rating *int32
 	// プロ経験年数
 	Experience *int32
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
+	// Madden NFL の評価値CSVのうち、他の列に対応しない項目一式（JSON）
+	MaddenAttributes []byte
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
 }
 
 type Setting struct {

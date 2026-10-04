@@ -50,8 +50,10 @@ func TestImporter_Run(t *testing.T) {
 	assert.Equal(t, 1, playerCount)
 	assert.Equal(t, 1, rosterCount)
 
-	// 2 回目（背番号を変更）: player は再利用、roster は更新（新規行は増えない）
+	// 2 回目（背番号・大学・体重を変更）: player は行を増やさず更新され、roster も更新される。
 	entry.Number = "9"
+	entry.College = "Updated University"
+	entry.WeightKg = mustPtr(110.0)
 	res, err = im.Run(ctx, []domain.RosterEntry{entry}, Options{})
 	require.NoError(t, err)
 	assert.Equal(t, Result{PlayersReused: 1, RostersUpserted: 1}, res)
@@ -64,6 +66,12 @@ func TestImporter_Run(t *testing.T) {
 	var number int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT number FROM rosters LIMIT 1`).Scan(&number))
 	assert.Equal(t, 9, number)
+
+	var college string
+	var weight float64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT college, weight FROM players LIMIT 1`).Scan(&college, &weight))
+	assert.Equal(t, "Updated University", college, "既存 player の大学が CSV の新しい値で更新される")
+	assert.InDelta(t, 110.0, weight, 0.01, "既存 player の体重が CSV の新しい値で更新される")
 }
 
 func TestImporter_Run_UnknownPosition(t *testing.T) {

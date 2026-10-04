@@ -98,6 +98,8 @@ var allPositions = []Position{
 	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDE, Name: "RE", Odflg: false},
 	// EDGE([49ers]Nick Bosa)
 	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDE, Name: "EDGE", Odflg: false},
+	// REDG(Madden 26 の Position ID。Right Edge = RDE)
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDE, Name: "REDG", Odflg: false},
 	// LDE
 	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "LDE", Odflg: false},
 	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "LDE/RDE", Odflg: false},
@@ -105,8 +107,12 @@ var allPositions = []Position{
 	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "LE", Odflg: false},
 	// DE
 	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "DE", Odflg: false},
+	// LEDG(Madden 26 の Position ID。Left Edge = LDE)
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "LEDG", Odflg: false},
 	// MLB
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryMLB, Name: "MLB", Odflg: false},
+	// MIKE(Madden 26 の Position ID。Middle LB = MLB)
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryMLB, Name: "MIKE", Odflg: false},
 	// IL
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryMLB, Name: "IL", Odflg: false},
 	// ILB
@@ -118,6 +124,8 @@ var allPositions = []Position{
 	// RLB
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "RLB", Odflg: false},
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "RLB/LLB", Odflg: false},
+	// SAM(Madden 26 の Position ID。Strong-side LB。既存の ROLB と同様、右側として扱う)
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "SAM", Odflg: false},
 	// ROLB
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "ROLB", Odflg: false},
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "ROLB/LOLB", Odflg: false},
@@ -129,6 +137,8 @@ var allPositions = []Position{
 	// LLB
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LLB", Odflg: false},
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LLB/RLB", Odflg: false},
+	// WILL(Madden 26 の Position ID。Weak-side LB。既存の LOLB と同様、左側として扱う)
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "WILL", Odflg: false},
 	// LOLB
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LOLB", Odflg: false},
 	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LOLB/ROLB", Odflg: false},
@@ -165,6 +175,69 @@ var allPositions = []Position{
 	{AbstractCategory: AbstractCategoryLS, Category: CategoryLS, Name: "LS,TE", Odflg: true},
 	// ポジション情報が無い場合
 	{AbstractCategory: AbstractCategoryNothing, Category: CategoryNothing, Name: PositionNoData, Odflg: true},
+
+	// ---- 追加の複合ポジション（db/data の実データを一括投入した際に見つかった未登録コード） ----
+	// いずれも既存の複合ポジション（"WR/RB" 等）と同じ慣例で、先頭のポジションのカテゴリを採用する。
+
+	// オフェンスライン系
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryRG, Name: "G/T", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryLG, Name: "LG/RG", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryLG, Name: "LG/RT", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryLOT, Name: "LT/LG", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryRG, Name: "RG/LG", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryRG, Name: "RG/LT", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryROT, Name: "RT/LG", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryROT, Name: "RT/RG", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryLOT, Name: "T-G", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryLOT, Name: "T/LT", Odflg: true},
+	{AbstractCategory: AbstractCategoryOL, Category: CategoryLOT, Name: "T/TE", Odflg: true},
+
+	// QB・WR・TE の複合
+	{AbstractCategory: AbstractCategoryQB, Category: CategoryQB, Name: "QB/WR", Odflg: true},
+	{AbstractCategory: AbstractCategoryWR, Category: CategoryWR, Name: "WR/QB", Odflg: true},
+	{AbstractCategory: AbstractCategoryTE, Category: CategoryTE, Name: "TE/QB", Odflg: true},
+	{AbstractCategory: AbstractCategoryTE, Category: CategoryTE, Name: "TE/T", Odflg: true},
+
+	// ディフェンスライン系
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "DE/DT", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDT, Name: "DL/LB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDT, Name: "DT/DE", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDT, Name: "DT/FB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "LDE/LDT", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryLDE, Name: "LDE/NT", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDE, Name: "RDE/LDT", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDE, Name: "RDE/LOLB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDL, Category: CategoryRDE, Name: "RDE/NT", Odflg: false},
+
+	// ラインバッカー系
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LB/OLB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LB/WLB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryMLB, Name: "LILB/RILB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryLLB, Name: "LLB/MLB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryMLB, Name: "MLB/RLB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryMLB, Name: "RILB/LILB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "RLB/LDE", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "RLB/MLB", Odflg: false},
+	{AbstractCategory: AbstractCategoryLB, Category: CategoryRLB, Name: "ROLB/RILB", Odflg: false},
+
+	// ディフェンスバック系
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryRCB, Name: "CB/LCB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryRCB, Name: "CB/SS", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryLCB, Name: "DB/FS", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryLCB, Name: "DB/LCB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryFS, Name: "FS/RCB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryLCB, Name: "LCB/DB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryLCB, Name: "LCB/FS", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryRCB, Name: "RCB/DB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryRCB, Name: "RCB/FS", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategoryRCB, Name: "RCB/SS", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategorySS, Name: "SS/LCB", Odflg: false},
+	{AbstractCategory: AbstractCategoryDB, Category: CategorySS, Name: "SS/RLB", Odflg: false},
+
+	// LH([packers]Elgton Jenkins、2023年スターター表)。本来はオフェンスラインの選手だが、PFR側の表記が
+	// "Left Halfback"（古いバックフィールド呼称）になっている。意味のある区分ではないため、
+	// 最も近いカテゴリとして HB（ランニングバック系）に割り当てる。
+	{AbstractCategory: AbstractCategoryRB, Category: CategoryHB, Name: "LH", Odflg: true},
 }
 
 // AllPositions はポジションマスタの全件を返す。

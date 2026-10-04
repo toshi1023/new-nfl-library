@@ -4,7 +4,8 @@ CREATE TABLE starters (
     odflg      BOOLEAN     NOT NULL,
     roster_id  INTEGER     NOT NULL REFERENCES rosters (id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT starters_roster_id_key UNIQUE (roster_id)
 );
 
 CREATE INDEX starters_season_roster_id_idx ON starters (season, roster_id);

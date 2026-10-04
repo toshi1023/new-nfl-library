@@ -11,10 +11,13 @@ import (
 type Querier interface {
 	CreatePlayer(ctx context.Context, arg CreatePlayerParams) (*Player, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (*User, error)
+	// cmd/importmadden（Madden NFL 評価CSVで rosters を更新するコマンド）専用のクエリ。
+	FindTeamByName(ctx context.Context, name string) (*Team, error)
 	FormationsExist(ctx context.Context) (bool, error)
 	FoulRulesExist(ctx context.Context) (bool, error)
 	// cmd/importrosters（outputs/csv/*.csv から players / rosters を生成するコマンド）専用のクエリ。
 	GetPlayerByIdentity(ctx context.Context, arg GetPlayerByIdentityParams) (*Player, error)
+	GetRosterByPlayerIdentity(ctx context.Context, arg GetRosterByPlayerIdentityParams) (*Roster, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id int32) (*User, error)
 	InsertFormations(ctx context.Context, arg []InsertFormationsParams) (int64, error)
@@ -31,7 +34,13 @@ type Querier interface {
 	TeamsExist(ctx context.Context) (bool, error)
 	// シードコマンド（cmd/seed）専用のクエリ。
 	TruncateSeedTables(ctx context.Context) error
+	// firstname/lastname/birthday は突き合わせキーなので更新しない。
+	UpdatePlayer(ctx context.Context, arg UpdatePlayerParams) (*Player, error)
+	UpdateRosterMaddenAttributes(ctx context.Context, arg UpdateRosterMaddenAttributesParams) error
 	UpsertRoster(ctx context.Context, arg UpsertRosterParams) (*Roster, error)
+	// cmd/importdata（db/data の starter CSV を starters テーブルへ反映するコマンド）専用のクエリ。
+	// roster の検索は maddenimport.sql の GetRosterByPlayerIdentity を共用する。
+	UpsertStarter(ctx context.Context, arg UpsertStarterParams) error
 	UsersExist(ctx context.Context) (bool, error)
 }
 

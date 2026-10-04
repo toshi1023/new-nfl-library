@@ -10,6 +10,20 @@ INSERT INTO players (firstname, lastname, birthday, height, weight, college,
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
+-- name: UpdatePlayer :one
+-- firstname/lastname/birthday は突き合わせキーなので更新しない。
+UPDATE players
+SET height        = $1,
+    weight        = $2,
+    college       = $3,
+    drafted_team  = $4,
+    drafted_round = $5,
+    drafted_rank  = $6,
+    drafted_year  = $7,
+    updated_at    = now()
+WHERE id = $8
+RETURNING *;
+
 -- name: ListPositions :many
 SELECT * FROM positions
 ORDER BY id;

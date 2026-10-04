@@ -11,6 +11,8 @@
 ├── cmd/scrapestarters/main.go       スタータースクレイプ CLI のエントリポイント
 ├── cmd/seed/main.go                 マスタデータ投入 CLI のエントリポイント
 ├── cmd/importrosters/main.go        CSV → players/rosters 反映 CLI のエントリポイント
+├── cmd/importmadden/main.go         Madden NFL 評価CSV → rosters 反映 CLI のエントリポイント
+├── cmd/importdata/main.go           db/data の roster/starter CSV 一括投入 CLI のエントリポイント
 ├── internal/                        アプリ本体（外部から import 不可）
 │   ├── config/                      環境変数の読み込みと検証
 │   ├── domain/                      ドメインエラー・チーム定義・ポジション/反則の定数・ロスター型とインターフェース
@@ -22,6 +24,8 @@
 │   ├── repository/sqlc/             sqlc 生成コード（手編集禁止）
 │   ├── seed/                        マスタデータの定義と投入ロジック（Laravel の database/seeders 相当）
 │   ├── rosterimport/                CSV から players / rosters を生成するロジック
+│   ├── maddenimport/                Madden NFL 評価CSVで rosters を更新するロジック
+│   ├── starterimport/               starter CSV から starters テーブルを更新するロジック
 │   ├── infra/postgres/              pgx 接続プール
 │   ├── infra/pfr/                   pro-football-reference.com のページ取得（chromedp）と解析（goquery）。ロスター表・スターター表の両方を扱う
 │   ├── infra/csvwriter/             ロスターの CSV 出力
@@ -29,6 +33,8 @@
 ├── api/                             OpenAPI 仕様と生成設定
 ├── db/migrations/                   golang-migrate 用 SQL
 ├── db/queries/                      sqlc 用 SQL
+├── db/data/roster_starters/         cmd/importdata が一括投入する roster/starter CSV（2012〜2025年）
+├── db/data/madden/                  cmd/importdata が一括投入する Madden NFL 評価値CSV（年ごとのサブディレクトリ）
 ├── docs/                            ドキュメント
 ├── outputs/csv/                     スクレイプ結果の CSV（git 管理外、実行時に自動作成）
 ├── Makefile / Dockerfile / docker-compose.yml
@@ -173,6 +179,88 @@ make import-rosters csv=outputs/csv/2024_rosters.csv strict=1
 
 `internal/rosterimport` は `internal/usecase` を経由しない。CLAUDE.md の「usecase は domain のインターフェースにのみ依存する」という制約は HTTP API のビジネスロジック向けで、`internal/seed` と同様、CLI 専用の import ツールとして sqlc を直接使う（domain 側の repository インターフェースは用意しない）。
 
+## `cmd/importmadden/main.go`
+
+Madden NFL の評価値CSVを読み込み、`rosters` テーブルの `position_id` / `rating` / `number` /
+`madden_attributes` を更新する CLI。Laravel の `CsvImport` コマンドに相当する。CSV は
+`db/data/madden/`（年ごとのサブディレクトリ構成）に2012〜2025年分が同梱されている。
+
+```
+go run ./cmd/importmadden                          # 全シーズン一括（既定 db/data/madden 配下）
+go run ./cmd/importmadden -season 2024 -dir path/to/2024フォルダ
+go run ./cmd/importmadden -season 2012 -csv a.csv -csv b.csv
+make import-madden                                 # 全シーズン一括
+make import-madden season=2024 dir=path/to/2024
+```
+
+`-season` を省略すると全シーズン一括モードになる。`-dir`（既定 `db/data/madden`）直下の、名前が
+4桁の年であるサブディレクトリをそれぞれ1シーズンとして扱い、`internal/maddenimport.Importer.RunSeasons`
+（`FindSeasonDirs` でサブディレクトリを列挙し、`CollectPaths`/`LoadFiles`/`Run` をシーズンごとに呼ぶ）
+で順に処理する。このモードでは `-csv` は使えない（どのシーズンのファイルか判断できないため）。
+`-season` を指定すると、その1シーズンだけを対象にする従来の挙動になる。
+
+`cmd/importdata -type madden` も内部で同じ `RunSeasons` を呼んでいるため、両コマンドの一括処理ロジックは
+共通（ログの内容も同じ）。`cmd/importmadden` 単体で Madden データだけを一括更新したい場合と、
+`cmd/importdata` で rosters/starters と合わせて一括処理したい場合のどちらでも使える。
+
+事前に `make seed`（teams / positions）と `cmd/importrosters`（対象シーズンの roster）が投入済みであること。
+該当する roster が無い行はスキップする。
+
+**列名の判定は固定の別名リストではなく正規化＋キーワード判定**（`internal/maddenimport/parser.go` の
+`detectColumns`）。2012〜2025年の実データを調べたところ、年ごとに列名の表記がかなり異なっていた
+（`Jersey Number` / `JerseyNumber` / `jerseyNum` / `JERSEY` など）ため、別名を列挙するより頑丈。
+各フィールドは最初に一致した列だけを採用する（先勝ち）。2024年分には主レーティング列 `Overall` の他に
+`stats/overall/value` のような入れ子形式の列があり、後者を rating 列と誤検出しないよう `/` を含む列は
+jersey・rating の部分一致判定から除外している。
+
+**チーム解決**: 行に `Team` 列があれば `teams.name` または `city+' '+name` に一致するチームを探す。
+`NY Jets` や `Oakland Raiders`、`Washington Redskins` のような略記・旧名称は `teamNameAliases`
+（`internal/maddenimport/importer.go`）で現在のチーム名に対応付ける。`Team` 列を持たない年
+（2014・2015年分）は `TeamHintFromFilename` がファイル名の先頭トークン（`atl_madden_nfl_15.csv` → `atl`）
+から `domain.FindTeam` で解決する。
+
+**氏名の一致判定**: `firstname`/`lastname` は `cmd/importrosters` で作成済みの `players` テーブルと
+完全一致で突き合わせる。ただし次の2点を正規化している。
+- 姓の末尾の世代呼称（`Jr.`, `Sr.`, `II`, `III`, `IV`, `V`）を取り除く（players 側には含まれないため）
+- イニシャル名（`A.J.` 等）はピリオドの有無が players 側で選手ごとに不統一なため、`findRoster` が
+  そのままの表記で見つからなければピリオドを除いた表記でも1回だけ再検索する
+
+**未知のポジションの扱い**は `cmd/importrosters` と同様、既定でスキップ（`-strict` で中断）。
+
+## `cmd/importdata/main.go`
+
+`db/data/`（2012〜2025年の14シーズン分がリポジトリに同梱されている）を一括で DB へ反映する CLI。
+`db/data/roster_starters/`（`cmd/scraperosters`・`cmd/scrapestarters` の出力形式）と
+`db/data/madden/`（Madden NFL の評価値CSV。年ごとのサブディレクトリ構成）の両方を対象にできる。
+
+```
+go run ./cmd/importdata                        # rosters・starters・madden とも全シーズン
+go run ./cmd/importdata -type rosters          # rosters だけ
+go run ./cmd/importdata -type starters -season 2024
+go run ./cmd/importdata -type madden -season 2024
+make import-data type=madden season=2024
+```
+
+| フラグ | 既定 | 説明 |
+|---|---|---|
+| `-dir` | `db/data/roster_starters` | rosters/starters CSV のあるディレクトリ |
+| `-madden-dir` | `db/data/madden` | Madden 評価値CSV のあるディレクトリ（年ごとのサブディレクトリ構成） |
+| `-type` | `all` | `rosters` / `starters` / `madden` / `all` |
+| `-season` | 指定なし | このシーズンだけに絞る |
+| `-strict` | false | 未知のポジションで中断するか |
+
+`-type all`（既定）は **rosters → starters → madden の順に全シーズン投入**する。starters・madden は
+season + team_id + firstname + lastname で対応する roster を探すため、rosters が先に無いと
+全行スキップになる。
+
+内部では既存の `internal/rosterimport.Importer`・`internal/starterimport.Importer`・
+`internal/maddenimport.Importer` をファイルごと（シーズンごと）に呼び出すだけで、CSV の探索・
+season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは持たない。1ファイル（または
+1シーズン分のファイル群）が1トランザクションなので、どこかのシーズンで失敗してもそれ以前に
+投入済みのシーズンは残る。`findSeasonDirs` は `db/data/madden/<season>/` のようにサブディレクトリ名が
+そのままシーズンになる構成を前提にしている（`cmd/importmadden` が扱う `-dir`/`-csv` と同じ読み込み
+ロジックを `internal/maddenimport.CollectPaths`/`LoadFiles` として共通化し、両コマンドから使っている）。
+
 ---
 
 ## `internal/config/`
@@ -192,9 +280,10 @@ make import-rosters csv=outputs/csv/2024_rosters.csv strict=1
 | `team.go` | `Team`（ID と URL 用略称）。`AllTeams()` が全 32 チームを既存 DB の teams.id 順に返し、`FindTeam(abbr)` で略称から引く。Laravel の `config/const.php` の `UrlTeams` / `TeamIds` に相当。 |
 | `roster.go` | `RawRosterRow`（表 1 行の文字列そのまま）、`RosterEntry`（単位換算済みの CSV 1 行）、`RosterFetcher` / `RosterWriter` インターフェース。usecase はこの 2 つのインターフェースにのみ依存する。 |
 | `position.go` | ポジションのカテゴリ（`CategoryQB` など）と抽象カテゴリ（`AbstractCategoryQB` など）の定数。Laravel の `config/const.php` の `Category` / `AbstCate` と同じ値。 |
-| `position_data.go` | ポジションマスタ本体（85 件）。`AllPositions()`、名前からカテゴリを引く `PositionCategory(name)`、攻撃側かどうかを返す `IsOffenceCategory(category)`。`internal/seed`（DB 投入）・`cmd/scrapestarters`（odflg 判定）・`cmd/importrosters`（position_id 解決）から参照される唯一の定義元。Laravel の元データに無かった `FB/DL`（実データで見つかった複合ポジション）を追加している。 |
+| `position_data.go` | ポジションマスタ本体（136 件）。`AllPositions()`、名前からカテゴリを引く `PositionCategory(name)`、攻撃側かどうかを返す `IsOffenceCategory(category)`。`internal/seed`（DB 投入）・`cmd/scrapestarters`（odflg 判定）・`cmd/importrosters`/`cmd/importdata`（position_id 解決）から参照される唯一の定義元。Laravel の元データに無かった複合ポジション（`FB/DL`、`LEDG`/`REDG`/`MIKE`/`SAM`/`WILL`、および `db/data` の14シーズン分を一括投入した際に見つかった46件）を追加している。先頭のポジションのカテゴリを採用する既存の慣例に合わせているが、`LH`（2023年の Elgton Jenkins のスターター表記。PFR 側の表記ゆれで、本来はオフェンスラインの選手）だけは単独表記のため HB 系に割り当てる判断をしている。 |
 | `foul_rule.go` | 反則ルールの攻守ステータス定数（`FoulStatusCommon` など）。 |
 | `starter.go` | `RawStarterRow`（スターター表 1 行）、`StarterEntry`（CSV 1 行）、`StarterFetcher` / `StarterWriter` インターフェース。 |
+| `position_data.go` の追記 | `LEDG`/`REDG`/`MIKE`/`SAM`/`WILL`（Madden 26 の `Position ID` に現れる新表記）を追加済み。`LEDG`→`LDE`、`REDG`→`RDE`、`MIKE`→`MLB` は一意に対応。`SAM`（strong-side LB）→`RLB`、`WILL`（weak-side LB）→`LLB` は既存の `ROLB`/`LOLB` の慣例に合わせた判断。 |
 
 今後、エンティティ・値オブジェクト・リポジトリインターフェースをこのパッケージに追加する。他の `internal` パッケージを import してはならない。
 
@@ -265,7 +354,7 @@ make import-rosters csv=outputs/csv/2024_rosters.csv strict=1
 | `seeder.go` | `Seeder.Run(ctx, Options)`。テーブルごとに「既に行があればスキップ」を判定し、sqlc の `:copyfrom`（pgx の COPY）で一括投入する。formations は投入後に id を読み直して Key → id の対応を作り、pf_relations の外部キーに使う。root ユーザーのパスワードは bcrypt でハッシュする（Laravel の `Hash::make` と互換）。 |
 | `teams_data.go` | 32 チーム。順序は `domain.AllTeams` の ID と一致。 |
 | `positions_data.go` | `domain.AllPositions()` を sqlc の投入用パラメータに変換するだけの薄いファイル。実データは `internal/domain/position_data.go` にある（重複を避けるため）。 |
-| `data_test.go` | 件数（85 件）などの検証。`FB/DL` 追加分を反映済み。 |
+| `data_test.go` | 件数（136 件）などの検証。|
 | `formations_data.go` | フォーメーション 36 件。`Key` は Laravel の `Formationid` のキーで、テーブルには保存しない。Laravel 側で 21 件目の名前が `Nickel(LCB)` と重複していたのを `Nickel(RCB)` に修正している。 |
 | `pf_relations_data.go` | フォーメーションとポジションカテゴリの関係 374 件。フォーメーションは `Key` で参照。 |
 | `foul_rules_data.go` | 反則ルール 34 件。 |
@@ -276,11 +365,32 @@ make import-rosters csv=outputs/csv/2024_rosters.csv strict=1
 
 ---
 
+## `internal/starterimport/`
+
+| ファイル | 役割 |
+|---|---|
+| `importer.go` | `Importer.Run(ctx, entries, Options)`。season + team_id + firstname + lastname で対応する roster を検索し、見つかれば `starters` テーブルへ `(season, odflg, roster_id)` を upsert する。見つからない、またはポジションがマスタに無い行はスキップ（`-strict` で中断）。Laravel の `ScrapeStarters` と異なり `rosters.position_id` は更新しない（`cmd/importrosters`/`cmd/importmadden` の2経路が既に更新しており、3つ目を増やさないための判断）。 |
+| `importer_integration_test.go` | `-tags integration` で実際の Postgres に対して新規作成・再実行時の冪等性（`starters_roster_id_key` の UNIQUE 制約による upsert）・未知ポジションの扱いを検証。 |
+
+---
+
+## `internal/maddenimport/`
+
+| ファイル | 役割 |
+|---|---|
+| `parser.go` | `ParseCSV(io.Reader) (rows []Row, hasTeamColumn bool, err error)`。ヘッダーを正規化してキーワード判定し、`Team`/`Position`(`Position ID`優先)/氏名(結合列優先)/`Jersey`系/`Overall`系を抽出、残りは `Row.Extra` に集める。`TeamHintFromFilename` はファイル名からチーム略称を推定する。ブラウザや DB に依存しない純粋関数なので単体テストできる。 |
+| `loader.go` | `CollectPaths(dir, explicit)` / `LoadFiles(paths, logger)`。ディレクトリ直下の `*.csv` 列挙とファイル読み込み（Team 列が無ければ `TeamHintFromFilename` で補う）を1箇所にまとめたもの。`FindSeasonDirs(rootDir, seasonFilter)` は年名のサブディレクトリ（`db/data/madden/<season>/`）を列挙する。`Importer.RunSeasons(ctx, rootDir, seasonFilter, opts, logger)` はこの3つを組み合わせて複数シーズンを一括処理する高レベル API。`cmd/importmadden`（`-season` 省略時）と `cmd/importdata`（`-type madden`）の両方から使う。 |
+| `parser_test.go` | 2012〜2025年の実データで確認した各形式（結合名/分割名混在、Team列なし、Position ID優先、入れ子stats列など）のテスト。 |
+| `importer.go` | `Importer.Run(ctx, season, []File, Options)`。1トランザクションで全行を処理。`resolveTeamID` がチーム名解決とエイリアス変換を、`findRoster` が氏名のピリオド表記ゆれを吸収したroster検索を行う。 |
+| `importer_integration_test.go` | `-tags integration` で実際の Postgres に対して更新・チームエイリアス・ファイル名フォールバックを検証。 |
+
+---
+
 ## `internal/rosterimport/`
 
 | ファイル | 役割 |
 |---|---|
-| `importer.go` | `Importer.Run(ctx, entries, Options)`。CSV から読み込んだ `[]domain.RosterEntry` を 1 トランザクションで players / rosters に反映する。`positions` は最初に全件読み込んでキャッシュする。player は firstname+lastname+birthday で重複判定（見つかれば既存値を保持、CSV で上書きしない）。roster は `season, team_id, player_id` の UNIQUE 制約を使って upsert する。未知のポジションは既定でスキップ（`Options.Strict` で即時中断に変更可）。 |
+| `importer.go` | `Importer.Run(ctx, entries, Options)`。CSV から読み込んだ `[]domain.RosterEntry` を 1 トランザクションで players / rosters に反映する。`positions` は最初に全件読み込んでキャッシュする。player は firstname+lastname+birthday で検索し、見つかれば身長・体重・大学・ドラフト情報を CSV の値で更新（`UpdatePlayer`。firstname/lastname/birthday は突き合わせキーなので更新しない）、無ければ新規作成する。roster は `season, team_id, player_id` の UNIQUE 制約を使って upsert する。未知のポジションは既定でスキップ（`Options.Strict` で即時中断に変更可）。 |
 | `importer_integration_test.go` | `-tags integration` で実際の Postgres に対して新規作成・再実行時の冪等性（player 再利用・roster 更新）・未知ポジションの扱いを検証。 |
 
 ---
@@ -320,7 +430,7 @@ make import-rosters csv=outputs/csv/2024_rosters.csv strict=1
 
 `StartersWriter.Write(ctx, entries)` がスターターを同様に書き出す。列は `season, team_id, team, position, firstname, lastname, odflg`。ファイル I/O（ディレクトリ作成・生成・クローズ）は `file.go` の `writeFile` に共通化してあり、両方の Writer から使われている。
 
-`decoder.go` は逆方向。`ReadRosterEntriesFile(path)` / `DecodeRosterEntries(io.Reader)` が `Encode` の書式（ヘッダ行 + 列順固定）を読み戻し `[]domain.RosterEntry` にする。`cmd/importrosters` が使う。
+`decoder.go` / `starters_decoder.go` は逆方向。`ReadRosterEntriesFile` / `ReadStarterEntriesFile` がそれぞれ `Encode` / `EncodeStarters` の書式（ヘッダ行 + 列順固定）を読み戻し `[]domain.RosterEntry` / `[]domain.StarterEntry` にする。`cmd/importrosters` と `cmd/importdata` が使う。
 
 ---
 
@@ -358,8 +468,8 @@ Laravel 側（`nfl-library-backend/database/migrations`）の業務テーブル�
 | `000003_create_teams` | teams | 32 チーム。作成後に `users.favorite_team` へ外部キーを張る |
 | `000004_create_formations` | formations | フォーメーション。`odflg` で攻守を区別 |
 | `000005_create_positions` | positions | ポジション。Laravel で後から追加された `odflg` を最初から含む |
-| `000006_create_rosters` | rosters | シーズン × チーム × 選手。`(season, team_id, player_id)` に UNIQUE |
-| `000007_create_starters` | starters | スターター。rosters を参照 |
+| `000006_create_rosters` | rosters | シーズン × チーム × 選手。`(season, team_id, player_id)` に UNIQUE。`madden_attributes`（JSONB）に Madden NFL 評価値CSVのうち他列に対応しない項目一式を保持 |
+| `000007_create_starters` | starters | スターター。rosters を参照。`roster_id` に UNIQUE（`cmd/importdata` の再実行を upsert で冪等にするため） |
 | `000008_create_tf_relations` | tf_relations | チームとフォーメーションの関係 |
 | `000009_create_pf_relations` | pf_relations | フォーメーションとポジションカテゴリの関係 |
 | `000010_create_settings` | settings | ユーザー設定。`(user_id, setting_id)` が複合主キー |
@@ -377,6 +487,8 @@ Laravel には無かった外部キー制約と検索用インデックスを追
 | `users.sql` | ユーザーの取得・作成。`-- name: Xxx :one` 形式のコメントでメソッド名と戻り値の種類を指定する。 |
 | `seed.sql` | シードコマンド専用。存在チェック、TRUNCATE、`:copyfrom` の一括 INSERT。 |
 | `rosterimport.sql` | `cmd/importrosters` 専用。player の検索/作成、positions 全件取得、roster の upsert。 |
+| `starterimport.sql` | `cmd/importdata`（starters 側）専用。`UpsertStarter`（roster の検索は maddenimport.sql の `GetRosterByPlayerIdentity` を共用）。 |
+| `maddenimport.sql` | `cmd/importmadden` 専用。チーム名検索（`name` または `city+' '+name`）、roster の氏名突合検索、`madden_attributes` を含む roster 更新。 |
 
 新しいマイグレーションは `make migrate-new name=xxx` で連番ファイルを作成する。up / down は必ずセットで書く。sqlc はマイグレーションファイルからスキーマを読むので、テーブル追加後に `make sqlc` を実行する。
 
@@ -397,6 +509,8 @@ Laravel には無かった外部キー制約と検索用インデックスを追
 | `make scrape-starters season=2024 [teams=buf,nwe] [out=x.csv]` | スターターをスクレイプして `outputs/csv/` に CSV 出力 |
 | `make seed [force=1]` | マスタデータを投入 |
 | `make import-rosters csv=x.csv [strict=1]` | CSV から players / rosters を生成 |
+| `make import-madden season=2024 dir=path [strict=1]` | Madden NFL 評価CSVで rosters を更新 |
+| `make import-data [type=rosters\|starters\|madden\|all] [season=2024] [strict=1]` | `db/data` の CSV を一括投入 |
 
 ## 環境変数
 

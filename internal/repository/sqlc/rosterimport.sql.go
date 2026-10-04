@@ -132,6 +132,63 @@ func (q *Queries) ListPositions(ctx context.Context) ([]*Position, error) {
 	return items, nil
 }
 
+const updatePlayer = `-- name: UpdatePlayer :one
+UPDATE players
+SET height        = $1,
+    weight        = $2,
+    college       = $3,
+    drafted_team  = $4,
+    drafted_round = $5,
+    drafted_rank  = $6,
+    drafted_year  = $7,
+    updated_at    = now()
+WHERE id = $8
+RETURNING id, firstname, lastname, birthday, height, weight, college, drafted_team, drafted_round, drafted_rank, drafted_year, image_file, created_at, updated_at
+`
+
+type UpdatePlayerParams struct {
+	Height       pgtype.Numeric
+	Weight       pgtype.Numeric
+	College      *string
+	DraftedTeam  *string
+	DraftedRound *string
+	DraftedRank  *string
+	DraftedYear  *int32
+	ID           int32
+}
+
+// firstname/lastname/birthday は突き合わせキーなので更新しない。
+func (q *Queries) UpdatePlayer(ctx context.Context, arg UpdatePlayerParams) (*Player, error) {
+	row := q.db.QueryRow(ctx, updatePlayer,
+		arg.Height,
+		arg.Weight,
+		arg.College,
+		arg.DraftedTeam,
+		arg.DraftedRound,
+		arg.DraftedRank,
+		arg.DraftedYear,
+		arg.ID,
+	)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Firstname,
+		&i.Lastname,
+		&i.Birthday,
+		&i.Height,
+		&i.Weight,
+		&i.College,
+		&i.DraftedTeam,
+		&i.DraftedRound,
+		&i.DraftedRank,
+		&i.DraftedYear,
+		&i.ImageFile,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
 const upsertRoster = `-- name: UpsertRoster :one
 INSERT INTO rosters (season, team_id, player_id, position_id, number, experience)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -140,7 +197,7 @@ DO UPDATE SET position_id = EXCLUDED.position_id,
               number       = EXCLUDED.number,
               experience   = EXCLUDED.experience,
               updated_at   = now()
-RETURNING id, season, team_id, player_id, position_id, number, rating, experience, created_at, updated_at
+RETURNING id, season, team_id, player_id, position_id, number, rating, experience, madden_attributes, created_at, updated_at
 `
 
 type UpsertRosterParams struct {
@@ -171,6 +228,7 @@ func (q *Queries) UpsertRoster(ctx context.Context, arg UpsertRosterParams) (*Ro
 		&i.Number,
 		&i.Rating,
 		&i.Experience,
+		&i.MaddenAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -12,7 +12,7 @@ import (
 // Laravel のシーダーと同じ件数であること。
 func TestDataCounts(t *testing.T) {
 	assert.Len(t, teams, 32)
-	assert.Len(t, positions, 85)
+	assert.Len(t, positions, 136)
 	assert.Len(t, formations, 36)
 	assert.Len(t, pfRelations, 374)
 	assert.Len(t, foulRules, 34)

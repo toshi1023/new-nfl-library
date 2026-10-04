@@ -7,6 +7,7 @@ CREATE TABLE rosters (
     number      INTEGER,
     rating      INTEGER,
     experience  INTEGER,
+    madden_attributes JSONB,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT rosters_season_team_player_key UNIQUE (season, team_id, player_id)
@@ -24,3 +25,4 @@ COMMENT ON COLUMN rosters.position_id IS 'positionsのID';
 COMMENT ON COLUMN rosters.number      IS '背番号';
 COMMENT ON COLUMN rosters.rating      IS '能力値';
 COMMENT ON COLUMN rosters.experience  IS 'プロ経験年数';
+COMMENT ON COLUMN rosters.madden_attributes IS 'Madden NFL の評価値CSVのうち、他の列に対応しない項目一式（JSON）';

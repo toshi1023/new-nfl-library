@@ -28,7 +28,10 @@ type Options struct {
 
 // Result は Run の結果件数。
 type Result struct {
-	PlayersCreated  int
+	// PlayersCreated は新規に作成した player の件数。
+	PlayersCreated int
+	// PlayersReused は既存の player を見つけて更新した件数（身長・体重・大学・ドラフト情報を
+	// CSV の値で上書きする。firstname/lastname/birthday は突き合わせキーなので更新しない）。
 	PlayersReused   int
 	RostersUpserted int
 	Skipped         int
@@ -145,21 +148,10 @@ func loadPositionIDs(ctx context.Context, q *sqlc.Queries) (map[string]int32, er
 	return ids, nil
 }
 
-// findOrCreatePlayer は firstname+lastname+birthday で既存 player を検索し、無ければ作成する。
-// 既存が見つかった場合は CSV の値で更新しない（Laravel の ScrapeRoster と同じ挙動）。
+// findOrCreatePlayer は firstname+lastname+birthday で既存 player を検索する。
+// 見つかった場合は身長・体重・大学・ドラフト情報を CSV の値で更新する（firstname/lastname/birthday は
+// 突き合わせキーなので更新しない）。見つからなければ新規作成する。
 func findOrCreatePlayer(ctx context.Context, q *sqlc.Queries, e domain.RosterEntry) (id int32, created bool, err error) {
-	existing, err := q.GetPlayerByIdentity(ctx, sqlc.GetPlayerByIdentityParams{
-		Firstname: e.FirstName,
-		Lastname:  e.LastName,
-		Birthday:  e.Birthday,
-	})
-	if err == nil {
-		return existing.ID, false, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return 0, false, fmt.Errorf("get player: %w", err)
-	}
-
 	height, err := numericFromFloat(e.HeightCm)
 	if err != nil {
 		return 0, false, fmt.Errorf("height %v: %w", e.HeightCm, err)
@@ -171,6 +163,31 @@ func findOrCreatePlayer(ctx context.Context, q *sqlc.Queries, e domain.RosterEnt
 	draftedYear, err := parseOptionalInt32(e.DraftedYear)
 	if err != nil {
 		return 0, false, fmt.Errorf("drafted_year %q: %w", e.DraftedYear, err)
+	}
+
+	existing, err := q.GetPlayerByIdentity(ctx, sqlc.GetPlayerByIdentityParams{
+		Firstname: e.FirstName,
+		Lastname:  e.LastName,
+		Birthday:  e.Birthday,
+	})
+	if err == nil {
+		updated, err := q.UpdatePlayer(ctx, sqlc.UpdatePlayerParams{
+			Height:       height,
+			Weight:       weight,
+			College:      optionalString(e.College),
+			DraftedTeam:  optionalString(e.DraftedTeam),
+			DraftedRound: optionalString(e.DraftedRound),
+			DraftedRank:  optionalString(e.DraftedRank),
+			DraftedYear:  draftedYear,
+			ID:           existing.ID,
+		})
+		if err != nil {
+			return 0, false, fmt.Errorf("update player: %w", err)
+		}
+		return updated.ID, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, fmt.Errorf("get player: %w", err)
 	}
 
 	created2, err := q.CreatePlayer(ctx, sqlc.CreatePlayerParams{
