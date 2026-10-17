@@ -28,6 +28,8 @@ type Querier interface {
 	InsertTeams(ctx context.Context, arg []InsertTeamsParams) (int64, error)
 	ListFormations(ctx context.Context) ([]*Formation, error)
 	ListPositions(ctx context.Context) ([]*Position, error)
+	// GET /api/v1/rosters（season・team_id で絞り込んでロスターを返す API）専用のクエリ。
+	ListRostersBySeasonTeam(ctx context.Context, arg ListRostersBySeasonTeamParams) ([]*ListRostersBySeasonTeamRow, error)
 	PfRelationsExist(ctx context.Context) (bool, error)
 	PositionsExist(ctx context.Context) (bool, error)
 	SettingsExist(ctx context.Context) (bool, error)

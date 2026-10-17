@@ -21,7 +21,7 @@ func TestClassify(t *testing.T) {
 		wantStatus int
 		wantCode   string
 	}{
-		{"validation", fmt.Errorf("age: %w", domain.ErrValidation), http.StatusBadRequest, CodeValidation},
+		{"validation", fmt.Errorf("age: %w", domain.ErrValidation), http.StatusUnprocessableEntity, CodeValidation},
 		{"unauthorized", domain.ErrUnauthorized, http.StatusUnauthorized, CodeUnauthorized},
 		{"forbidden", domain.ErrForbidden, http.StatusForbidden, CodeForbidden},
 		{"not found", fmt.Errorf("team: %w", domain.ErrNotFound), http.StatusNotFound, CodeNotFound},
@@ -34,10 +34,24 @@ func TestClassify(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantCode, code)
 			if tt.wantStatus == http.StatusInternalServerError {
-				assert.Equal(t, "internal server error", msg, "内部エラーの詳細を漏らさない")
+				assert.Equal(t, "サーバー内部でエラーが発生しました", msg, "内部エラーの詳細を漏らさない")
 			}
 		})
 	}
+}
+
+func TestRespondSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/", func(c *gin.Context) {
+		respondSuccess(c, "ok", gin.H{"rosters": []int{1, 2}})
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"message":"ok","data":{"rosters":[1,2]}}`, w.Body.String())
 }
 
 func TestRespondError(t *testing.T) {
@@ -51,7 +65,21 @@ func TestRespondError(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.JSONEq(t, `{"error":{"code":"NOT_FOUND","message":"team: not found"}}`, w.Body.String())
+	assert.JSONEq(t, `{"message":"team: not found","code":"E0004"}`, w.Body.String())
+}
+
+func TestRespondValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/", func(c *gin.Context) {
+		respondValidationError(c, "入力値が不正です", map[string][]string{"season": {"2012以降の値を指定してください"}})
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	assert.JSONEq(t, `{"message":"入力値が不正です","code":"E0001","errors":{"season":["2012以降の値を指定してください"]}}`, w.Body.String())
 }
 
 func TestRespondBindError(t *testing.T) {
@@ -76,8 +104,8 @@ func TestRespondBindError(t *testing.T) {
 		httpReq.Header.Set("Content-Type", "application/json")
 		r.ServeHTTP(w, httpReq)
 
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.Contains(t, w.Body.String(), `"code":"VALIDATION_ERROR"`)
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.Contains(t, w.Body.String(), `"code":"E0001"`)
 	})
 
 	t.Run("malformed json", func(t *testing.T) {
@@ -86,8 +114,8 @@ func TestRespondBindError(t *testing.T) {
 		httpReq.Header.Set("Content-Type", "application/json")
 		r.ServeHTTP(w, httpReq)
 
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.JSONEq(t, `{"error":{"code":"VALIDATION_ERROR","message":"invalid request body"}}`, w.Body.String())
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.Contains(t, w.Body.String(), `"code":"E0001"`)
 	})
 
 	t.Run("ok", func(t *testing.T) {

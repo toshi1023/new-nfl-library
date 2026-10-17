@@ -17,7 +17,9 @@ import (
 	"github.com/toshi1023/new-nfl-library/internal/handler"
 	"github.com/toshi1023/new-nfl-library/internal/infra/postgres"
 	"github.com/toshi1023/new-nfl-library/internal/logging"
+	"github.com/toshi1023/new-nfl-library/internal/repository"
 	"github.com/toshi1023/new-nfl-library/internal/router"
+	"github.com/toshi1023/new-nfl-library/internal/usecase"
 )
 
 // shutdownTimeout は停止シグナル受信後、処理中のリクエストの完了を待つ上限時間。
@@ -62,6 +64,9 @@ func run() error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// バリデーションエラーのフィールド名を form/json タグ（クライアントが送るキー）にする。
+	handler.RegisterValidatorTagName()
+
 	// SIGINT（Ctrl+C）/ SIGTERM（docker stop 等）を受け取るとキャンセルされる ctx を作る。
 	// この ctx は DB 接続などの初期化にも渡し、起動途中やデータ処理中でもシグナルで中断できるようにする。
 	// stop() を defer しておくことで、run 終了時にシグナルハンドラを解除する。
@@ -84,6 +89,10 @@ func run() error {
 	// pool は handler.Pinger インターフェースを満たすため、readiness チェック用にそのまま渡す。
 	healthHandler := handler.NewHealthHandler(pool)
 
+	rosterRepo := repository.NewRosterRepository(pool)
+	listRosters := usecase.NewListRosters(rosterRepo)
+	rosterHandler := handler.NewRosterHandler(listRosters, cfg.AssetBaseURL)
+
 	// ---- ルーター組み立て ----
 	// ミドルウェアと全ルートの登録は router パッケージに集約されている。
 	// main はハンドラを Deps に詰めて渡すだけで、ルーティングの詳細を知らない。
@@ -91,6 +100,7 @@ func run() error {
 		Logger:    logger,
 		JWTSecret: cfg.JWTSecret,
 		Health:    healthHandler,
+		Roster:    rosterHandler,
 	})
 
 	// ---- 5. HTTP サーバー生成 ----

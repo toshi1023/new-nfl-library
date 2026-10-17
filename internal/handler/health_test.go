@@ -49,6 +49,6 @@ func TestHealthHandler_Readyz(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
 
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-		assert.JSONEq(t, `{"error":{"code":"SERVICE_UNAVAILABLE","message":"dependency unavailable"}}`, w.Body.String())
+		assert.JSONEq(t, `{"message":"依存先に接続できません","code":"E0007"}`, w.Body.String())
 	})
 }

@@ -49,3 +49,13 @@ const (
 
 // PositionNoData はポジション情報が無い選手に割り当てるポジション名。
 const PositionNoData = "No Data"
+
+// PositionDetail はポジション1件の情報。API（/api/v1/rosters）で返す読み取り用エンティティ。
+// positions テーブルの id を持つ点がマスタ定義の Position（position_data.go）と異なる。
+type PositionDetail struct {
+	ID               int32
+	AbstractCategory int32
+	Category         int32
+	Name             string
+	Odflg            bool
+}

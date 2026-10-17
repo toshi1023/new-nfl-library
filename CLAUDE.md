@@ -77,9 +77,14 @@ handler → usecase → domain ← repository
 - `domain` にセンチネルエラーを定義する（例: `ErrNotFound`, `ErrConflict`, `ErrUnauthorized`, `ErrValidation`）。
 - usecase / repository はセンチネルエラーを `%w` でラップして返す。HTTP ステータスを意識しない。
 - HTTP ステータスへの変換は `internal/handler/response.go` の 1 箇所でのみ行う（`errors.Is` で判定）。
-- エラーレスポンスの JSON 形式は統一する:
+- レスポンスの JSON 形式は統一する。`code` は HTTP ステータスとは別軸のアプリ独自エラーコード（`E0001` 〜。`api/openapi.yaml` の `ErrorCode` enum と一致させる。Flutter 側の `ApiResult` が参照する）:
   ```json
-  { "error": { "code": "NOT_FOUND", "message": "user not found" } }
+  // 成功
+  { "message": "...", "data": { ... } }
+  // エラー
+  { "message": "user not found", "code": "E0004" }
+  // バリデーションエラー（422）
+  { "message": "入力値が不正です", "code": "E0001", "errors": { "team_id": ["max"] } }
   ```
 
 ### ハンドラ

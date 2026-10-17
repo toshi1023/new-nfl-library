@@ -43,7 +43,8 @@ func (h *HealthHandler) Readyz(c *gin.Context) {
 	if err := h.pinger.Ping(ctx); err != nil {
 		logging.FromContext(c.Request.Context()).Warn("readiness check failed", slog.Any("err", err))
 		c.AbortWithStatusJSON(http.StatusServiceUnavailable, ErrorResponse{
-			Error: ErrorDetail{Code: CodeServiceUnavailable, Message: "dependency unavailable"},
+			Message: "依存先に接続できません",
+			Code:    CodeUnavailable,
 		})
 		return
 	}

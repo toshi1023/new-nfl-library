@@ -22,6 +22,8 @@ type Config struct {
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
 	JWTSecret   string `envconfig:"JWT_SECRET"`
 	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
+	// AssetBaseURL は選手画像の配信元URL。未設定（既定）なら image_url は常に null になる。
+	AssetBaseURL string `envconfig:"ASSET_BASE_URL" default:""`
 }
 
 // Load は環境変数から Config を生成し、値を検証する。

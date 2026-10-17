@@ -39,7 +39,55 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/rosters:
+    get:
+      operationId: getRosters
+      summary: シーズン・チームで絞り込んでロスター一覧を取得する
+      tags: [rosters]
+      parameters:
+        - name: season
+          in: query
+          required: true
+          description: 対象シーズン（2012以降）
+          schema:
+            type: integer
+            minimum: 2012
+            example: 2024
+        - name: team_id
+          in: query
+          required: true
+          description: チームID（teamsテーブルの id。1〜32）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 32
+            example: 1
+      responses:
+        "200":
+          description: 取得成功（該当データが無い場合も rosters は空配列で 200 を返す）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/RosterListData"
+        "422":
+          description: クエリパラメータが不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorEnvelope"
+        "500":
+          description: サーバー内部エラー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 
 components:
   securitySchemes:
@@ -57,28 +105,184 @@ components:
           type: string
           example: ok
 
-    ErrorResponse:
+    # --- 共通エンベロープ ---
+    # 成功・エラー・バリデーションエラーのいずれも message を持つ。data の内容はエンドポイントごとに異なる。
+    SuccessEnvelope:
       type: object
-      required: [error]
+      required: [message, data]
       properties:
-        error:
-          $ref: "#/components/schemas/ErrorDetail"
-
-    ErrorDetail:
-      type: object
-      required: [code, message]
-      properties:
-        code:
-          type: string
-          description: 機械可読なエラーコード
-          enum:
-            - VALIDATION_ERROR
-            - UNAUTHORIZED
-            - FORBIDDEN
-            - NOT_FOUND
-            - CONFLICT
-            - INTERNAL_ERROR
-            - SERVICE_UNAVAILABLE
         message:
           type: string
-          example: user not found
+          example: ロスター情報を取得しました
+        data:
+          type: object
+
+    ErrorEnvelope:
+      type: object
+      required: [message, code]
+      properties:
+        message:
+          type: string
+          example: サーバー内部でエラーが発生しました
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+
+    ValidationErrorEnvelope:
+      type: object
+      required: [message, code, errors]
+      properties:
+        message:
+          type: string
+          example: 入力値が不正です
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        errors:
+          type: object
+          description: フィールド名 → エラーメッセージ一覧
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            season: ["2012以降の値を指定してください"]
+
+    ErrorCode:
+      type: string
+      description: |
+        アプリ独自の機械可読なエラーコード。HTTP ステータスとは別軸で管理する。
+          E0001: 入力値が不正（バリデーションエラー）
+          E0002: 認証されていない
+          E0003: 権限がない
+          E0004: リソースが見つからない
+          E0005: リソースが競合している
+          E0006: サーバー内部エラー
+          E0007: 依存先サービスが利用不可
+      enum: [E0001, E0002, E0003, E0004, E0005, E0006, E0007]
+      example: E0001
+
+    # --- /api/v1/rosters ---
+    RosterListData:
+      type: object
+      required: [rosters]
+      properties:
+        rosters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Roster"
+
+    Roster:
+      type: object
+      required:
+        [id, season, team_id, player_id, position_id, player, position, madden_attributes]
+      properties:
+        id:
+          type: integer
+        season:
+          type: integer
+        team_id:
+          type: integer
+        player_id:
+          type: integer
+        position_id:
+          type: integer
+        number:
+          type: integer
+          nullable: true
+        rating:
+          type: integer
+          nullable: true
+        experience:
+          type: integer
+          nullable: true
+        player:
+          $ref: "#/components/schemas/RosterPlayer"
+        position:
+          $ref: "#/components/schemas/RosterPosition"
+        madden_attributes:
+          type: array
+          description: Madden NFL の評価値CSVのうち、rosters の他の列に対応しない項目一式。
+          items:
+            $ref: "#/components/schemas/MaddenAttribute"
+
+    RosterPlayer:
+      type: object
+      required: [id, firstname, lastname, birthday]
+      properties:
+        id:
+          type: integer
+        firstname:
+          type: string
+        lastname:
+          type: string
+        birthday:
+          type: string
+          description: "YYYYMMDD 形式"
+          example: "19960521"
+        height:
+          type: number
+          nullable: true
+        weight:
+          type: number
+          nullable: true
+        college:
+          type: string
+          nullable: true
+        drafted_team:
+          type: string
+          nullable: true
+        drafted_round:
+          type: string
+          nullable: true
+        drafted_rank:
+          type: string
+          nullable: true
+        drafted_year:
+          type: integer
+          nullable: true
+        image_file:
+          type: string
+          nullable: true
+        birthday_year:
+          type: integer
+          nullable: true
+        birthday_date:
+          type: string
+          nullable: true
+          example: "1996年05月21日"
+        image_url:
+          type: string
+          nullable: true
+
+    RosterPosition:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        abstract_category:
+          type: integer
+          nullable: true
+        category:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        odflg:
+          type: integer
+          description: "攻守フラグ（1: Offence, 0: Defence）"
+          nullable: true
+
+    MaddenAttribute:
+      type: object
+      required: [key, label, value]
+      properties:
+        key:
+          type: string
+          description: CSV ヘッダーそのまま（表記ゆれを含む）
+          example: stats/speed/value
+        label:
+          type: string
+          description: 日本語名
+          example: スピード
+        value:
+          type: string

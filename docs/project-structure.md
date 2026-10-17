@@ -267,7 +267,7 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 
 | ファイル | 役割 |
 |---|---|
-| `config.go` | `Config` 構造体と `Load()`。envconfig で環境変数を読み、`validate()` で値を検証する。検証内容: `APP_ENV` は development / staging / production のいずれか、`APP_PORT` は 1〜65535、`DATABASE_URL` は空不可、`JWT_SECRET` は development 以外で必須、`LOG_LEVEL` は slog が解釈できる値。ヘルパーとして `IsDevelopment()`、`Addr()`（`:8080` 形式）、`SlogLevel()` を持つ。 |
+| `config.go` | `Config` 構造体と `Load()`。envconfig で環境変数を読み、`validate()` で値を検証する。検証内容: `APP_ENV` は development / staging / production のいずれか、`APP_PORT` は 1〜65535、`DATABASE_URL` は空不可、`JWT_SECRET` は development 以外で必須、`LOG_LEVEL` は slog が解釈できる値。ヘルパーとして `IsDevelopment()`、`Addr()`（`:8080` 形式）、`SlogLevel()` を持つ。`AssetBaseURL`（`ASSET_BASE_URL`、既定空文字）は選手画像の配信元 URL。未設定なら `/api/v1/rosters` の `image_url` は常に `null` になる（検証対象ではない）。 |
 | `config_test.go` | 上記の検証ルールのテスト。envconfig は「空文字で設定された変数」を未設定扱いにしないため、`unsetenv` ヘルパーで本当に未設定にしてテストしている。 |
 
 ---
@@ -284,6 +284,8 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 | `foul_rule.go` | 反則ルールの攻守ステータス定数（`FoulStatusCommon` など）。 |
 | `starter.go` | `RawStarterRow`（スターター表 1 行）、`StarterEntry`（CSV 1 行）、`StarterFetcher` / `StarterWriter` インターフェース。 |
 | `position_data.go` の追記 | `LEDG`/`REDG`/`MIKE`/`SAM`/`WILL`（Madden 26 の `Position ID` に現れる新表記）を追加済み。`LEDG`→`LDE`、`REDG`→`RDE`、`MIKE`→`MLB` は一意に対応。`SAM`（strong-side LB）→`RLB`、`WILL`（weak-side LB）→`LLB` は既存の `ROLB`/`LOLB` の慣例に合わせた判断。 |
+| `player.go` | `Player`（`/api/v1/rosters` の読み取り用エンティティ）。氏名・生年月日・身長体重（`*float64`、NULL 許容）・大学・ドラフト情報・画像ファイル名。 |
+| `roster_detail.go` | `RosterDetail`（roster 1 件 + player + position + madden_attributes を束ねた読み取り用エンティティ）と `RosterRepository` インターフェース（`ListBySeasonAndTeam(ctx, season, teamID)`）。`PositionDetail`（`position.go` に定義。`position_data.go` のマスタ用 `Position` と名前が衝突するため別名にしている）に `ID` を含めて持つ。 |
 
 今後、エンティティ・値オブジェクト・リポジトリインターフェースをこのパッケージに追加する。他の `internal` パッケージを import してはならない。
 
@@ -315,10 +317,12 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 
 | ファイル | 役割 |
 |---|---|
-| `response.go` | エラーレスポンスの一元化。エラーコード定数（`VALIDATION_ERROR` など、`api/openapi.yaml` の enum と一致させる）、`ErrorResponse` 構造体、`respondError(c, err)`（`classify` でドメインエラー → HTTP ステータスに変換。未知のエラーは 500 で詳細を隠し、ログにだけ残す）、`respondBindError(c, err)`（`ShouldBindJSON` 等の失敗を 400 に変換）。 |
-| `response_test.go` | `classify` の対応表テストと、`respondError` / `respondBindError` を Gin 経由で通すテスト。 |
+| `response.go` | 統一レスポンスの一元化。成功時は `SuccessResponse{message, data}`、エラー時は `ErrorResponse{message, code}`、バリデーションエラー（422）時は `ValidationErrorResponse{message, code, errors}`。`code` はアプリ独自のエラーコード（`CodeValidation`=E0001 〜 `CodeUnavailable`=E0007。`api/openapi.yaml` の `ErrorCode` enum と一致させる。HTTP ステータスとは別軸で、Flutter 側の `ApiResult.error`/`validationError` が参照する）。`respondSuccess(c, message, data)`、`respondError(c, err)`（`classify` でドメインエラー → HTTP ステータス・コードに変換。未知のエラーは 500 で詳細を隠し、ログにだけ残す）、`respondValidationError(c, message, errs)`、`respondBindError(c, err)`（`ShouldBindQuery` 等の失敗を 422 に変換。`validator.ValidationErrors` からフィールド別にタグを集める）。`RegisterValidatorTagName()`（`main` 起動時に一度だけ呼ぶ。バリデーションエラーの `FieldError.Field()` を Go の構造体フィールド名でなく `form`/`json` タグ、つまりクライアントが実際に送るキー名にする）。 |
+| `response_test.go` | `classify` の対応表テストと、`respondSuccess` / `respondError` / `respondValidationError` / `respondBindError` を Gin 経由で通すテスト。 |
 | `health.go` | `HealthHandler`。`Healthz`（liveness、常に 200）と `Readyz`（readiness、`Pinger` インターフェース経由で DB に 2 秒タイムアウトで ping し、失敗なら 503）。`Pinger` を interface にしているのは、テストでスタブに差し替えるためと、handler が pgx の具象型を知らずに済むようにするため。 |
 | `health_test.go` | `Healthz` / `Readyz` のテスト。`stubPinger` で DB の成功・失敗を再現。 |
+| `roster.go` | `RosterHandler`（`GET /api/v1/rosters`）。`RosterLister` インターフェース（`usecase.ListRosters` 相当）に依存。クエリ `season`/`team_id`（`binding:"required,min=..."`）を bind し、結果を Flutter 側の `RosterResponse`/`RosterPlayerResponse`/`RosterPositionResponse` と同じ形に整形して返す。Laravel の `Player` モデルのアクセサ相当（`birthday_year`・`birthday_date`・`image_url`）はここで算出する（保存はしない）。`image_url` は `AssetBaseURL` が空なら常に `null`、画像ファイル名が無ければ `{AssetBaseURL}/no-image.jpg`、あれば `{AssetBaseURL}/players/{id}/{image_file}`。`madden_attributes`（JSONB、英語の CSV 見出しがキー）は `{key, label, value}` の配列に変換して返す。`label` は `maddenimport.JapaneseLabel` で日本語化し、未知キーは生のキーをそのまま表示名にする。キー順はソートして決定的にする。 |
+| `roster_test.go` | `stubRosterLister` を使ったテスト。正常系（`birthday_year`/`birthday_date`/`odflg`/日本語ラベル/未知キーのフォールバック/`image_url`）、空配列（`null` でなく `[]`）、`image_url` の組み立て、バリデーションエラー（422・`code=E0001`・snake_case のフィールド名）、usecase エラー（500・`code=E0006`）。 |
 
 新しいハンドラを追加するときは、リクエスト / レスポンス用の構造体をこのパッケージ内に定義し、domain のエンティティを直接 JSON にしない。
 
@@ -330,7 +334,7 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 
 - グローバルミドルウェア: `RequestID` → `Logger` → `Recovery` の順
 - `/healthz`、`/readyz` は認証なし
-- `/api/v1` グループ。認証不要のルートは `v1` に、認証必須のルートは `authed`（`middleware.Auth` 適用済み）に登録する。現時点では空。
+- `/api/v1` グループ。認証不要のルートは `v1` に、認証必須のルートは `authed`（`middleware.Auth` 適用済み）に登録する。`v1.GET("/rosters", d.Roster.Index)` を登録済み（認証不要側）。`authed` は現時点では空。
 
 ---
 
@@ -342,6 +346,8 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 | `scrape_rosters_test.go` | Fetcher / Writer をスタブに差し替えたテスト。正常系、途中失敗時の部分出力、キャンセル、換算関数。 |
 | `scrape_starters.go` | `ScrapeStarters.Run(ctx, season, teams)`。構造は `ScrapeRosters` と同じ（チーム毎に蓄積 → 最後に一括書き出し、途中失敗時も部分出力）。`toStarterEntry` が `domain.PositionCategory` / `IsOffenceCategory` で odflg を決める。 |
 | `scrape_starters_test.go` | Fetcher / Writer をスタブに差し替えたテスト。odflg 判定（既知・未知ポジション）を含む。 |
+| `list_rosters.go` | `ListRosters.Run(ctx, season, teamID)`。`season`（`MinSeason`=2012 未満は不可）と `teamID`（1〜`MaxTeamID`=32）を検証し、`domain.RosterRepository` へ委譲する。範囲外は `domain.ErrValidation` でラップ。 |
+| `list_rosters_test.go` | `domain.RosterRepository` のスタブを使ったテスト。委譲・エラー伝播・season/team_id の範囲外チェック。 |
 
 `domain` のインターフェースにのみ依存し、`repository` や `infra` の具象型を知らない。
 
@@ -383,6 +389,8 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 | `parser_test.go` | 2012〜2025年の実データで確認した各形式（結合名/分割名混在、Team列なし、Position ID優先、入れ子stats列など）のテスト。 |
 | `importer.go` | `Importer.Run(ctx, season, []File, Options)`。1トランザクションで全行を処理。`resolveTeamID` がチーム名解決とエイリアス変換を、`findRoster` が氏名のピリオド表記ゆれを吸収したroster検索を行う。 |
 | `importer_integration_test.go` | `-tags integration` で実際の Postgres に対して更新・チームエイリアス・ファイル名フォールバックを検証。 |
+| `japanese.go` | `JapaneseLabel(rawHeader string) (string, bool)`。`madden_attributes`（JSONB）のキーであるCSVヘッダーに日本語名を付けるための辞書と変換関数。14シーズン分の実データには同じ能力値でも8種類ほどの表記ゆれ（大文字/小文字、`Rating`接尾辞、2024年のみの`stats/<name>/value`形式、typo等）があり、`canonicalStatKey` で正規化したうえで `japaneseNames`（概念ごとの日本語名）を引く。正規化だけでは一致しない表記（"Block"と"Blocking"の違い、Madden側の仕様変更によるFootwork→Finesse・Strength→Powerの改名、typoなど）は `aliasKeys` で読み替える。データの保存形式自体は変えず、表示時にその場で変換する用途を想定。 |
+| `japanese_test.go` / `japanese_testdata_test.go` | `db/data/madden` の全14シーズンで実際に観測された生ヘッダー370件（`allObservedMaddenHeaders`）を1件も取り逃さず翻訳できることを保証するテスト。 |
 
 ---
 
@@ -394,6 +402,14 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 | `importer_integration_test.go` | `-tags integration` で実際の Postgres に対して新規作成・再実行時の冪等性（player 再利用・roster 更新）・未知ポジションの扱いを検証。 |
 
 ---
+
+## `internal/repository/`
+
+| ファイル | 役割 |
+|---|---|
+| `pgtype.go` | `numericToFloat(pgtype.Numeric) (*float64, error)`。身長・体重列（`NUMERIC`）を `*float64` に変換する（`NULL` は `nil`）。 |
+| `roster_repository.go` | `RosterRepository`（`domain.RosterRepository` の実装）。`ListBySeasonAndTeam` は `sqlc` の `ListRostersBySeasonTeam` を呼び、各行を `domain.RosterDetail` に変換する（`madden_attributes` の JSON デコード、身長体重の `pgtype.Numeric`→`*float64` 変換を含む）。 |
+| `roster_repository_integration_test.go` | `-tags integration` で実際の Postgres に対して検証。実データ（2024シーズン・Josh Allen）での取得内容、未知の season/team は空配列（エラーにしない）。 |
 
 ## `internal/repository/sqlc/`（生成コード・手編集禁止）
 
@@ -407,8 +423,9 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 | `users.sql.go` | `db/queries/users.sql` から生成されたメソッド（`GetUserByID` / `GetUserByEmail` / `CreateUser`）。 |
 | `seed.sql.go` / `copyfrom.go` | `db/queries/seed.sql` から生成。存在チェック（`TeamsExist` など）、`TruncateSeedTables`、`ListFormations`、および `:copyfrom` による一括 INSERT（`InsertTeams` など。pgx の COPY プロトコルを使う）。 |
 | `rosterimport.sql.go` | `db/queries/rosterimport.sql` から生成。`GetPlayerByIdentity`、`CreatePlayer`、`ListPositions`、`UpsertRoster`（`ON CONFLICT ... DO UPDATE`）。 |
+| `rosters_api.sql.go` | `db/queries/rosters_api.sql` から生成。`ListRostersBySeasonTeam`（rosters/players/positions の 3 テーブル JOIN。列名衝突を避けるため `player_table_id`/`position_table_id`/`position_name` 等の別名を付けている）。 |
 
-`repository` パッケージ直下には、今後 domain のリポジトリインターフェースを実装するラッパー（例: `user_repository.go`）を置く。
+`repository` パッケージ直下には、domain のリポジトリインターフェースを実装するラッパーを置く（`roster_repository.go` など）。
 
 ---
 
@@ -442,7 +459,7 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 
 ## `internal/oapi/types.gen.go`（生成コード・手編集禁止）
 
-`make gen` の出力。`api/openapi.yaml` の `components.schemas` から Go の型（`HealthResponse`、`ErrorResponse`、`ErrorDetail`）を生成している。仕様を変更したら再生成する。
+`make gen` の出力。`api/openapi.yaml` の `components.schemas` から Go の型を生成している。仕様を変更したら再生成する。
 
 ---
 
@@ -450,7 +467,7 @@ season 抽出（`findSeasonFiles`／`findSeasonDirs`）以外のロジックは�
 
 | ファイル | 役割 |
 |---|---|
-| `openapi.yaml` | API 仕様（OpenAPI 3.0.3）。これが正で、エンドポイントの追加・変更はまずここを更新する。現在は `/healthz`、`/readyz`、共通スキーマ（`HealthResponse`、`ErrorResponse`、`ErrorDetail` とそのエラーコード enum）、`bearerAuth` セキュリティスキームを定義。 |
+| `openapi.yaml` | API 仕様（OpenAPI 3.0.3）。これが正で、エンドポイントの追加・変更はまずここを更新する。`/healthz`、`/readyz`、`/api/v1/rosters`（`season`/`team_id` クエリ）を定義。共通スキーマ: `SuccessEnvelope`（`message`,`data`）、`ErrorEnvelope`（`message`,`code`）、`ValidationErrorEnvelope`（`message`,`code`,`errors`）、`ErrorCode`（`E0001`〜`E0007` の enum）、`RosterListData`/`Roster`/`RosterPlayer`/`RosterPosition`/`MaddenAttribute`。`bearerAuth` セキュリティスキームも定義。 |
 | `oapi-codegen.yaml` | oapi-codegen の設定。パッケージ名 `oapi`、出力先 `internal/oapi/types.gen.go`、モデル型のみ生成（サーバースタブは生成せず、ルーティングは Gin で手書きする）。 |
 
 ---
@@ -489,6 +506,7 @@ Laravel には無かった外部キー制約と検索用インデックスを追
 | `rosterimport.sql` | `cmd/importrosters` 専用。player の検索/作成、positions 全件取得、roster の upsert。 |
 | `starterimport.sql` | `cmd/importdata`（starters 側）専用。`UpsertStarter`（roster の検索は maddenimport.sql の `GetRosterByPlayerIdentity` を共用）。 |
 | `maddenimport.sql` | `cmd/importmadden` 専用。チーム名検索（`name` または `city+' '+name`）、roster の氏名突合検索、`madden_attributes` を含む roster 更新。 |
+| `rosters_api.sql` | `GET /api/v1/rosters` 専用。`ListRostersBySeasonTeam`（rosters/players/positions の JOIN。`season`・`team_id` で絞り込み、`players.lastname, players.firstname` でソート）。 |
 
 新しいマイグレーションは `make migrate-new name=xxx` で連番ファイルを作成する。up / down は必ずセットで書く。sqlc はマイグレーションファイルからスキーマを読むので、テーブル追加後に `make sqlc` を実行する。
 
@@ -522,3 +540,4 @@ Laravel には無かった外部キー制約と検索用インデックスを追
 | `JWT_SECRET` | なし | JWT 署名鍵。`development` 以外では必須 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `SEED_ROOT_EMAIL` / `SEED_ROOT_PASSWORD` | なし | `make seed` の root ユーザー。未設定なら users / settings をスキップ |
+| `ASSET_BASE_URL` | 空文字 | 選手画像の配信元 URL。未設定なら `/api/v1/rosters` の `image_url` は常に `null` |
