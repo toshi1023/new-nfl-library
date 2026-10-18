@@ -44,12 +44,35 @@ FROM rosters
 JOIN players ON players.id = rosters.player_id
 JOIN positions ON positions.id = rosters.position_id
 WHERE rosters.season = $1 AND rosters.team_id = $2
-ORDER BY players.lastname, players.firstname
+  AND (
+    cardinality($3::text[]) = 0
+    OR EXISTS (
+      SELECT 1 FROM unnest($3::text[]) AS term
+      WHERE players.firstname ILIKE '%' || term || '%' ESCAPE '\'
+         OR players.lastname ILIKE '%' || term || '%' ESCAPE '\'
+    )
+  )
+ORDER BY
+  CASE WHEN $4::text = 'rating' AND $5::bool THEN rosters.rating END DESC NULLS LAST,
+  CASE WHEN $4::text = 'rating' AND NOT $5::bool THEN rosters.rating END ASC NULLS LAST,
+  CASE WHEN $4::text = 'number' AND $5::bool THEN rosters.number END DESC NULLS LAST,
+  CASE WHEN $4::text = 'number' AND NOT $5::bool THEN rosters.number END ASC NULLS LAST,
+  CASE WHEN $4::text = 'experience' AND $5::bool THEN rosters.experience END DESC NULLS LAST,
+  CASE WHEN $4::text = 'experience' AND NOT $5::bool THEN rosters.experience END ASC NULLS LAST,
+  CASE WHEN $4::text = 'name' AND $5::bool THEN players.lastname END DESC,
+  CASE WHEN $4::text = 'name' AND NOT $5::bool THEN players.lastname END ASC,
+  CASE WHEN $4::text = 'name' AND $5::bool THEN players.firstname END DESC,
+  CASE WHEN $4::text = 'name' AND NOT $5::bool THEN players.firstname END ASC,
+  players.lastname,
+  players.firstname
 `
 
 type ListRostersBySeasonTeamParams struct {
-	Season int32
-	TeamID int32
+	Season   int32
+	TeamID   int32
+	Names    []string
+	SortBy   string
+	SortDesc bool
 }
 
 type ListRostersBySeasonTeamRow struct {
@@ -83,7 +106,13 @@ type ListRostersBySeasonTeamRow struct {
 
 // GET /api/v1/rosters（season・team_id で絞り込んでロスターを返す API）専用のクエリ。
 func (q *Queries) ListRostersBySeasonTeam(ctx context.Context, arg ListRostersBySeasonTeamParams) ([]*ListRostersBySeasonTeamRow, error) {
-	rows, err := q.db.Query(ctx, listRostersBySeasonTeam, arg.Season, arg.TeamID)
+	rows, err := q.db.Query(ctx, listRostersBySeasonTeam,
+		arg.Season,
+		arg.TeamID,
+		arg.Names,
+		arg.SortBy,
+		arg.SortDesc,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -36,6 +36,48 @@ func (e ErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for GetRostersParamsSortBy.
+const (
+	Experience GetRostersParamsSortBy = "experience"
+	Name       GetRostersParamsSortBy = "name"
+	Number     GetRostersParamsSortBy = "number"
+	Rating     GetRostersParamsSortBy = "rating"
+)
+
+// Valid indicates whether the value is a known member of the GetRostersParamsSortBy enum.
+func (e GetRostersParamsSortBy) Valid() bool {
+	switch e {
+	case Experience:
+		return true
+	case Name:
+		return true
+	case Number:
+		return true
+	case Rating:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetRostersParamsSortOrder.
+const (
+	Asc  GetRostersParamsSortOrder = "asc"
+	Desc GetRostersParamsSortOrder = "desc"
+)
+
+// Valid indicates whether the value is a known member of the GetRostersParamsSortOrder enum.
+func (e GetRostersParamsSortOrder) Valid() bool {
+	switch e {
+	case Asc:
+		return true
+	case Desc:
+		return true
+	default:
+		return false
+	}
+}
+
 // ErrorCode アプリ独自の機械可読なエラーコード。HTTP ステータスとは別軸で管理する。
 //
 //	E0001: 入力値が不正（バリデーションエラー）
@@ -145,12 +187,54 @@ type RosterPosition struct {
 	Odflg *int `json:"odflg,omitempty"`
 }
 
+// Season defines model for Season.
+type Season struct {
+	// Season Example: 2024
+	Season int `json:"season"`
+}
+
+// SeasonListData defines model for SeasonListData.
+type SeasonListData struct {
+	Seasons []Season `json:"seasons"`
+}
+
 // SuccessEnvelope defines model for SuccessEnvelope.
 type SuccessEnvelope struct {
 	Data map[string]interface{} `json:"data"`
 
 	// Message Example: ロスター情報を取得しました
 	Message string `json:"message"`
+}
+
+// Team defines model for Team.
+type Team struct {
+	// Area 表示用ラベル（1: 東, 2: 北, 3: 南, 4: 西）
+	//
+	// Example: 東
+	Area string `json:"area"`
+
+	// BackImageFile Example: bills_cover.jpg
+	BackImageFile *string `json:"back_image_file,omitempty"`
+
+	// City Example: Buffalo
+	City string `json:"city"`
+
+	// Conference 表示用ラベル（1: AFC, 2: NFC）
+	//
+	// Example: AFC
+	Conference string `json:"conference"`
+	Id         int    `json:"id"`
+
+	// ImageFile Example: bills.gif
+	ImageFile *string `json:"image_file,omitempty"`
+
+	// Name Example: Bills
+	Name string `json:"name"`
+}
+
+// TeamListData defines model for TeamListData.
+type TeamListData struct {
+	Teams []Team `json:"teams"`
 }
 
 // ValidationErrorEnvelope defines model for ValidationErrorEnvelope.
@@ -184,4 +268,19 @@ type GetRostersParams struct {
 
 	// TeamId チームID（teamsテーブルの id。1〜32）
 	TeamId int `form:"team_id" json:"team_id"`
+
+	// Name 選手名の部分一致検索（firstname・lastname のいずれかに部分一致。大文字小文字は区別しない）。 複数の語を指定するとOR条件で絞り込む（いずれか1語でも一致すれば対象）。繰り返し指定 （name=Josh&name=Allen）とカンマ区切りの1つの値（name=Josh,Allen）のどちらでも指定できる。
+	Name *[]string `form:"name,omitempty" json:"name,omitempty"`
+
+	// SortBy 並び替え対象の項目（省略時は rating）
+	SortBy *GetRostersParamsSortBy `form:"sort_by,omitempty" json:"sort_by,omitempty"`
+
+	// SortOrder 並び替え順（省略時は desc）。rating・number・experience が未設定（null）の roster は 昇順・降順どちらでも常に最後になる。
+	SortOrder *GetRostersParamsSortOrder `form:"sort_order,omitempty" json:"sort_order,omitempty"`
 }
+
+// GetRostersParamsSortBy defines parameters for GetRosters.
+type GetRostersParamsSortBy string
+
+// GetRostersParamsSortOrder defines parameters for GetRosters.
+type GetRostersParamsSortOrder string

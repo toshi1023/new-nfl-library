@@ -64,6 +64,38 @@ paths:
             minimum: 1
             maximum: 32
             example: 1
+        - name: name
+          in: query
+          required: false
+          description: >-
+            選手名の部分一致検索（firstname・lastname のいずれかに部分一致。大文字小文字は区別しない）。
+            複数の語を指定するとOR条件で絞り込む（いずれか1語でも一致すれば対象）。繰り返し指定
+            （name=Josh&name=Allen）とカンマ区切りの1つの値（name=Josh,Allen）のどちらでも指定できる。
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+          example: [Josh, Allen]
+        - name: sort_by
+          in: query
+          required: false
+          description: 並び替え対象の項目（省略時は rating）
+          schema:
+            type: string
+            enum: [rating, number, experience, name]
+            default: rating
+        - name: sort_order
+          in: query
+          required: false
+          description: >-
+            並び替え順（省略時は desc）。rating・number・experience が未設定（null）の roster は
+            昇順・降順どちらでも常に最後になる。
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
       responses:
         "200":
           description: 取得成功（該当データが無い場合も rosters は空配列で 200 を返す）
@@ -82,6 +114,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ValidationErrorEnvelope"
+        "500":
+          description: サーバー内部エラー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/search/seasons:
+    get:
+      operationId: getSearchSeasons
+      summary: ロスターが存在するシーズン一覧を取得する（検索UIの選択肢用）
+      tags: [search]
+      responses:
+        "200":
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SeasonListData"
+        "500":
+          description: サーバー内部エラー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/search/teams:
+    get:
+      operationId: getSearchTeams
+      summary: チーム一覧を取得する（検索UIの選択肢用）
+      tags: [search]
+      responses:
+        "200":
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TeamListData"
         "500":
           description: サーバー内部エラー
           content:
@@ -286,3 +366,60 @@ components:
           example: スピード
         value:
           type: string
+
+    # --- /api/v1/search/seasons ---
+    SeasonListData:
+      type: object
+      required: [seasons]
+      properties:
+        seasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/Season"
+
+    Season:
+      type: object
+      required: [season]
+      properties:
+        season:
+          type: integer
+          example: 2024
+
+    # --- /api/v1/search/teams ---
+    TeamListData:
+      type: object
+      required: [teams]
+      properties:
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/Team"
+
+    Team:
+      type: object
+      required: [id, city, name, conference, area]
+      properties:
+        id:
+          type: integer
+        city:
+          type: string
+          example: Buffalo
+        name:
+          type: string
+          example: Bills
+        conference:
+          type: string
+          description: "表示用ラベル（1: AFC, 2: NFC）"
+          example: AFC
+        area:
+          type: string
+          description: "表示用ラベル（1: 東, 2: 北, 3: 南, 4: 西）"
+          example: 東
+        image_file:
+          type: string
+          nullable: true
+          example: bills.gif
+        back_image_file:
+          type: string
+          nullable: true
+          example: bills_cover.jpg

@@ -93,6 +93,11 @@ func run() error {
 	listRosters := usecase.NewListRosters(rosterRepo)
 	rosterHandler := handler.NewRosterHandler(listRosters, cfg.AssetBaseURL)
 
+	searchRepo := repository.NewSearchRepository(pool)
+	listSeasons := usecase.NewListSeasons(searchRepo)
+	listTeams := usecase.NewListTeams(searchRepo)
+	searchHandler := handler.NewSearchHandler(listSeasons, listTeams)
+
 	// ---- ルーター組み立て ----
 	// ミドルウェアと全ルートの登録は router パッケージに集約されている。
 	// main はハンドラを Deps に詰めて渡すだけで、ルーティングの詳細を知らない。
@@ -101,6 +106,7 @@ func run() error {
 		JWTSecret: cfg.JWTSecret,
 		Health:    healthHandler,
 		Roster:    rosterHandler,
+		Search:    searchHandler,
 	})
 
 	// ---- 5. HTTP サーバー生成 ----

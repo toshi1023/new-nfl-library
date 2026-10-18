@@ -34,7 +34,18 @@ make import-data       # db/data の CSV（roster/starter/madden）を一括投�
 
 ## マイグレーションをフレッシュにしてデータを投入し直す手順
 
-スキーマを変更した後や、DB を完全に作り直したいときの手順。**`migrate-down-all` は全テーブルを削除するので、残しておきたいデータがある場合は事前に確認すること。**
+スキーマを変更した後や、DB を完全に作り直したいときの手順。**全テーブルを削除するので、残しておきたいデータがある場合は事前に確認すること。**
+
+最短手順は `make db-reset` 1コマンドで、マイグレーションの全削除 → 再適用 → `make seed` → `make import-data type=all`（2012〜2025年の rosters/starters/madden 全シーズン）までを一括で行う。確認プロンプトが出るので `y` で続行するか、`yes=1` を付けて無人実行する。
+
+```sh
+make up          # 未起動なら起動
+make db-reset    # 確認プロンプトに y で答える（yes=1 を付けると無人実行）
+```
+
+内部では `$(go env GOPATH)/bin/migrate ... drop -f` → `migrate ... up` → `make seed` → `make import-data type=all` の順に実行される。`DATABASE_URL` を `.env` や環境変数で変えている場合はそれが使われる。
+
+以下は同じ処理を手動で1ステップずつ行う場合の内訳（個別のシーズン/種類だけ入れ直したい場合などに使う）。
 
 1. PostgreSQL が起動していることを確認する
 
@@ -102,6 +113,7 @@ make import-data       # db/data の CSV（roster/starter/madden）を一括投�
 | `make migrate-new name=xxx` | マイグレーションファイル作成 |
 | `make seed [force=1]` | マスタデータ投入 |
 | `make import-data [type=rosters\|starters\|madden\|all] [season=2024] [strict=1]` | `db/data` の CSV を一括投入 |
+| `make db-reset [yes=1]` | DBを初期状態に戻し、シード・CSVインポート(全シーズン)まで一括実行。破壊的操作（確認プロンプトあり） |
 | `make import-rosters csv=path [strict=1]` | 単一の roster CSV から players / rosters を生成 |
 | `make import-madden [season=2024] [dir=path] [strict=1]` | Madden NFL 評価CSVで rosters を更新（season 省略時は全シーズン一括） |
 | `make scrape-rosters season=2024 [teams=buf,nwe]` | pro-football-reference.com からロスターをスクレイプ |

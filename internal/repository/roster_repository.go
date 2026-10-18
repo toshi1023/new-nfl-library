@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -24,11 +25,21 @@ func NewRosterRepository(pool *pgxpool.Pool) *RosterRepository {
 }
 
 // ListBySeasonAndTeam は season・team_id に一致する roster を player・position と合わせて返す。
-func (r *RosterRepository) ListBySeasonAndTeam(ctx context.Context, season, teamID int) ([]domain.RosterDetail, error) {
+// names が空でなければ、いずれか1語でも firstname・lastname に部分一致する roster に絞り込む（OR条件）。
+// sortBy・sortOrder で並び順を指定する（domain.RosterRepository のコメント参照）。
+func (r *RosterRepository) ListBySeasonAndTeam(ctx context.Context, season, teamID int, names []string, sortBy, sortOrder string) ([]domain.RosterDetail, error) {
+	escaped := make([]string, 0, len(names))
+	for _, n := range names {
+		escaped = append(escaped, escapeLikePattern(n))
+	}
+
 	q := sqlc.New(r.pool)
 	rows, err := q.ListRostersBySeasonTeam(ctx, sqlc.ListRostersBySeasonTeamParams{
-		Season: int32(season),
-		TeamID: int32(teamID),
+		Season:   int32(season),
+		TeamID:   int32(teamID),
+		Names:    escaped,
+		SortBy:   sortBy,
+		SortDesc: sortOrder == "desc",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list rosters: %w", err)
@@ -105,4 +116,14 @@ func decodeMaddenAttributes(raw []byte) (map[string]string, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// escapeLikePattern は ILIKE のワイルドカード文字（\, %, _）をエスケープする。
+// 選手名のフリー入力をそのまま '%' || name || '%' に埋め込むため、入力に % や _ が含まれていても
+// 意図しないワイルドカードとして展開されないようにする（クエリ側は ESCAPE '\' を指定している）。
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	s = strings.ReplaceAll(s, "_", `\_`)
+	return s
 }

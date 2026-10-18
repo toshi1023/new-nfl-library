@@ -15,13 +15,16 @@ import (
 )
 
 type stubRosterLister struct {
-	rosters              []domain.RosterDetail
-	err                  error
-	gotSeason, gotTeamID int
+	rosters                 []domain.RosterDetail
+	err                     error
+	gotSeason, gotTeamID    int
+	gotNames                []string
+	gotSortBy, gotSortOrder string
 }
 
-func (s *stubRosterLister) Run(_ context.Context, season, teamID int) ([]domain.RosterDetail, error) {
-	s.gotSeason, s.gotTeamID = season, teamID
+func (s *stubRosterLister) Run(_ context.Context, season, teamID int, names []string, sortBy, sortOrder string) ([]domain.RosterDetail, error) {
+	s.gotSeason, s.gotTeamID, s.gotNames = season, teamID, names
+	s.gotSortBy, s.gotSortOrder = sortBy, sortOrder
 	return s.rosters, s.err
 }
 
@@ -85,6 +88,103 @@ func TestRosterHandler_Index_EmptyResult(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.JSONEq(t, `{"message":"ロスター情報を取得しました","data":{"rosters":[]}}`, w.Body.String())
+}
+
+func TestRosterHandler_Index_NameFilter(t *testing.T) {
+	lister := &stubRosterLister{rosters: []domain.RosterDetail{sampleRoster()}}
+	r := newRosterRouter(lister, "")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1&name=Allen", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{"Allen"}, lister.gotNames)
+}
+
+func TestRosterHandler_Index_NameOmitted(t *testing.T) {
+	lister := &stubRosterLister{rosters: []domain.RosterDetail{sampleRoster()}}
+	r := newRosterRouter(lister, "")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, lister.gotNames)
+}
+
+func TestRosterHandler_Index_NameMultipleRepeatedParams(t *testing.T) {
+	lister := &stubRosterLister{rosters: []domain.RosterDetail{sampleRoster()}}
+	r := newRosterRouter(lister, "")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1&name=Josh&name=Diggs", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{"Josh", "Diggs"}, lister.gotNames)
+}
+
+func TestRosterHandler_Index_NameCommaSeparated(t *testing.T) {
+	lister := &stubRosterLister{rosters: []domain.RosterDetail{sampleRoster()}}
+	r := newRosterRouter(lister, "")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1&name=Josh,+Diggs,Kincaid", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{"Josh", "Diggs", "Kincaid"}, lister.gotNames)
+}
+
+func TestSplitNames(t *testing.T) {
+	assert.Equal(t, []string{"Josh", "Allen"}, splitNames([]string{"Josh, Allen"}))
+	assert.Equal(t, []string{"Josh", "Allen"}, splitNames([]string{"Josh", "Allen"}))
+	assert.Equal(t, []string{"Josh", "Allen", "Diggs"}, splitNames([]string{"Josh,Allen", "Diggs"}))
+	assert.Empty(t, splitNames(nil))
+	assert.Empty(t, splitNames([]string{"", "  ", ","}))
+}
+
+func TestRosterHandler_Index_SortDefaults(t *testing.T) {
+	lister := &stubRosterLister{rosters: []domain.RosterDetail{sampleRoster()}}
+	r := newRosterRouter(lister, "")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "", lister.gotSortBy, "sort_by省略時はhandlerは空文字のままusecaseに渡す（既定値の適用はusecaseの責務）")
+	assert.Equal(t, "", lister.gotSortOrder)
+}
+
+func TestRosterHandler_Index_SortByOrderGiven(t *testing.T) {
+	lister := &stubRosterLister{rosters: []domain.RosterDetail{sampleRoster()}}
+	r := newRosterRouter(lister, "")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1&sort_by=name&sort_order=asc", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "name", lister.gotSortBy)
+	assert.Equal(t, "asc", lister.gotSortOrder)
+}
+
+func TestRosterHandler_Index_SortValidationError(t *testing.T) {
+	lister := &stubRosterLister{}
+	r := newRosterRouter(lister, "")
+
+	t.Run("invalid sort_by", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1&sort_by=bogus", nil))
+
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.JSONEq(t, `{"message":"入力値が不正です","code":"E0001","errors":{"sort_by":["oneof"]}}`, w.Body.String())
+	})
+
+	t.Run("invalid sort_order", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rosters?season=2024&team_id=1&sort_order=bogus", nil))
+
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.JSONEq(t, `{"message":"入力値が不正です","code":"E0001","errors":{"sort_order":["oneof"]}}`, w.Body.String())
+	})
 }
 
 func TestRosterHandler_Index_ImageURL(t *testing.T) {

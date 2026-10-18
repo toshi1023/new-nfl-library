@@ -20,7 +20,12 @@ type RosterDetail struct {
 	MaddenAttributes map[string]string
 }
 
-// RosterRepository は season・team_id でロスターを検索する。
+// RosterRepository は season・team_id・選手名でロスターを検索する。
 type RosterRepository interface {
-	ListBySeasonAndTeam(ctx context.Context, season, teamID int) ([]RosterDetail, error)
+	// ListBySeasonAndTeam は season・team_id に一致する roster を返す。names が空でなければ、
+	// いずれか1語でも firstname・lastname に部分一致（大文字小文字区別なし）する roster に絞り込む
+	// （複数指定時は OR 条件。例: ["Josh", "Diggs"] なら Josh Allen と Stefon Diggs の両方が対象）。
+	// sortBy は "rating"/"number"/"experience"/"name" のいずれか、sortOrder は "asc"/"desc" のいずれか。
+	// number・experience・rating が NULL の roster は並び順（昇順・降順いずれでも）に関わらず常に最後になる。
+	ListBySeasonAndTeam(ctx context.Context, season, teamID int, names []string, sortBy, sortOrder string) ([]RosterDetail, error)
 }

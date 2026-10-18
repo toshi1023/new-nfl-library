@@ -16,6 +16,7 @@ type Deps struct {
 	JWTSecret string
 	Health    *handler.HealthHandler
 	Roster    *handler.RosterHandler
+	Search    *handler.SearchHandler
 }
 
 // New は Gin エンジンを生成し、ミドルウェアとルートを登録する。
@@ -33,6 +34,8 @@ func New(d Deps) *gin.Engine {
 	v1 := r.Group("/api/v1")
 
 	v1.GET("/rosters", d.Roster.Index)
+	v1.GET("/search/seasons", d.Search.Seasons)
+	v1.GET("/search/teams", d.Search.Teams)
 
 	// 認証不要のルートは v1 に、認証必須のルートは authed に登録する。
 	authed := v1.Group("", middleware.Auth(d.JWTSecret))

@@ -11,7 +11,7 @@ DATABASE_URL ?= postgres://app:app@localhost:5432/app?sslmode=disable
 MIGRATIONS_DIR := db/migrations
 
 .PHONY: help up down logs run dev build test test-integration lint fmt sqlc gen \
-        migrate-up migrate-down migrate-new tidy tools scrape-rosters scrape-starters seed import-rosters import-madden import-data
+        migrate-up migrate-down migrate-new tidy tools scrape-rosters scrape-starters seed import-rosters import-madden import-data db-reset
 
 help: ## ターゲット一覧を表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -84,6 +84,17 @@ import-madden: ## Madden NFL 評価CSVで rosters を更新 (make import-madden 
 
 import-data: ## db/data の CSV を一括投入 (make import-data [type=rosters|starters|madden|all] [season=2024] [strict=1])
 	@set -a; [ -f .env ] && . ./.env; set +a; DATABASE_URL="$(DATABASE_URL)" go run ./cmd/importdata $(if $(type),-type $(type)) $(if $(season),-season $(season)) $(if $(strict),-strict)
+
+db-reset: ## DBを初期状態に戻し、シード・CSVインポート(rosters/starters/madden全シーズン)まで一括実行。全テーブルを削除する破壊的操作 (make db-reset [yes=1])
+	@if [ "$(yes)" != "1" ]; then \
+		printf '%s の全テーブルを削除して再構築します。続行しますか? [y/N] ' "$(DATABASE_URL)"; \
+		read ans; \
+		case "$$ans" in [yY]) ;; *) echo "中止しました"; exit 1;; esac; \
+	fi
+	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" drop -f
+	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
+	$(MAKE) seed
+	$(MAKE) import-data type=all
 
 migrate-new: ## マイグレーションファイル作成 (make migrate-new name=xxx)
 	@test -n "$(name)" || (echo "usage: make migrate-new name=xxx" && exit 1)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,9 +13,9 @@ import (
 	"github.com/toshi1023/new-nfl-library/internal/maddenimport"
 )
 
-// RosterLister は season・team_id でロスターを検索する（internal/usecase.ListRosters が実装）。
+// RosterLister は season・team_id・選手名でロスターを検索する（internal/usecase.ListRosters が実装）。
 type RosterLister interface {
-	Run(ctx context.Context, season, teamID int) ([]domain.RosterDetail, error)
+	Run(ctx context.Context, season, teamID int, names []string, sortBy, sortOrder string) ([]domain.RosterDetail, error)
 }
 
 // RosterHandler は GET /api/v1/rosters を提供する。
@@ -30,10 +31,16 @@ func NewRosterHandler(lister RosterLister, assetBaseURL string) *RosterHandler {
 	return &RosterHandler{lister: lister, assetBaseURL: assetBaseURL}
 }
 
-// rostersQuery は GET /api/v1/rosters のクエリパラメータ。
+// rostersQuery は GET /api/v1/rosters のクエリパラメータ。Name は任意（選手名のフリー入力検索）。
+// ?name=Josh&name=Allen のような繰り返し指定と、?name=Josh,Allen のようなカンマ区切りの
+// 1つの値のどちらでも複数語を受け付ける（splitNames で正規化する）。
+// SortBy・SortOrder も任意。空文字なら usecase 側で既定値（rating・desc）を使う。
 type rostersQuery struct {
-	Season int `form:"season" binding:"required,min=2012"`
-	TeamID int `form:"team_id" binding:"required,min=1,max=32"`
+	Season    int      `form:"season" binding:"required,min=2012"`
+	TeamID    int      `form:"team_id" binding:"required,min=1,max=32"`
+	Name      []string `form:"name"`
+	SortBy    string   `form:"sort_by" binding:"omitempty,oneof=rating number experience name"`
+	SortOrder string   `form:"sort_order" binding:"omitempty,oneof=asc desc"`
 }
 
 // rosterResponse は /api/v1/rosters のレスポンス 1 件分。
@@ -97,7 +104,7 @@ func (h *RosterHandler) Index(c *gin.Context) {
 		return
 	}
 
-	rosters, err := h.lister.Run(c.Request.Context(), q.Season, q.TeamID)
+	rosters, err := h.lister.Run(c.Request.Context(), q.Season, q.TeamID, splitNames(q.Name), q.SortBy, q.SortOrder)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -106,6 +113,23 @@ func (h *RosterHandler) Index(c *gin.Context) {
 	respondSuccess(c, "ロスター情報を取得しました", gin.H{
 		"rosters": h.toRosterResponses(rosters),
 	})
+}
+
+// splitNames は "name" クエリパラメータをフラットな検索語のリストに変換する。
+// ?name=Josh&name=Allen（繰り返し指定）と ?name=Josh,Allen（カンマ区切りの1つの値）の
+// どちらも ["Josh", "Allen"] になる（両方を組み合わせてもよい）。前後の空白は除き、空の語は捨てる。
+func splitNames(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	for _, r := range raw {
+		for _, part := range strings.Split(r, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (h *RosterHandler) toRosterResponses(rosters []domain.RosterDetail) []rosterResponse {
