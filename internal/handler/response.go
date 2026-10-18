@@ -17,7 +17,7 @@ import (
 )
 
 // RegisterValidatorTagName は Gin のバリデーションエラーのフィールド名を、Go の構造体フィールド名
-// （例: "TeamID"）ではなく form/json タグ（例: "team_id"。クライアントが実際に送るキー）にする。
+// （例: "TeamID"）ではなく form/uri/json タグ（例: "team_id"。クライアントが実際に送るキー）にする。
 // main 起動時に一度だけ呼ぶこと（グローバルな副作用があるため init() では行わない）。
 func RegisterValidatorTagName() {
 	v, ok := binding.Validator.Engine().(*validator.Validate)
@@ -26,6 +26,9 @@ func RegisterValidatorTagName() {
 	}
 	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
 		name := fld.Tag.Get("form")
+		if name == "" {
+			name = fld.Tag.Get("uri")
+		}
 		if name == "" {
 			name = fld.Tag.Get("json")
 		}

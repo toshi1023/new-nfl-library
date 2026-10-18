@@ -28,7 +28,7 @@ func TestRosterRepository_ListBySeasonAndTeam(t *testing.T) {
 
 	repo := NewRosterRepository(pool)
 
-	t.Run("buf 2024 includes Josh Allen with madden attributes", func(t *testing.T) {
+	t.Run("buf 2024 includes Josh Allen", func(t *testing.T) {
 		rosters, err := repo.ListBySeasonAndTeam(ctx, 2024, 1, nil, "rating", "desc")
 		require.NoError(t, err)
 		require.NotEmpty(t, rosters)
@@ -44,7 +44,6 @@ func TestRosterRepository_ListBySeasonAndTeam(t *testing.T) {
 				assert.EqualValues(t, 17, *r.Number)
 				require.NotNil(t, r.Player.HeightCm)
 				assert.InDelta(t, 195.6, *r.Player.HeightCm, 0.01)
-				assert.NotEmpty(t, r.MaddenAttributes, "2024シーズンはMaddenデータ投入済みのはず")
 			}
 		}
 		assert.True(t, found, "Josh Allen が見つかること")
@@ -142,6 +141,72 @@ func TestRosterRepository_ListBySeasonAndTeam(t *testing.T) {
 			}
 			require.False(t, sawNull, "number が NULL の行より後に NULL でない行が来ている（NULLS LAST になっていない）: index=%d", i)
 		}
+	})
+}
+
+func TestRosterRepository_GetByIDAndCareer(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := postgres.NewPool(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	repo := NewRosterRepository(pool)
+
+	// 一覧から Josh Allen（buf 2024）の roster id を引いてから詳細を取得する。
+	rosters, err := repo.ListBySeasonAndTeam(ctx, 2024, 1, []string{"Josh"}, "rating", "desc")
+	require.NoError(t, err)
+	var allen domain.RosterDetail
+	for _, r := range rosters {
+		if r.Player.FirstName == "Josh" && r.Player.LastName == "Allen" {
+			allen = r
+		}
+	}
+	require.NotZero(t, allen.ID, "Josh Allen が見つかること")
+
+	t.Run("GetByID returns roster with team, starter and madden attributes", func(t *testing.T) {
+		p, err := repo.GetByID(ctx, int(allen.ID))
+		require.NoError(t, err)
+		assert.Equal(t, allen, p.RosterDetail, "一覧と同じ roster 情報を返す")
+		assert.EqualValues(t, 1, p.Team.ID)
+		assert.Equal(t, "Bills", p.Team.Name)
+		require.NotNil(t, p.Starter, "Josh Allen は 2024 のスターターのはず")
+		assert.True(t, p.Starter.Odflg)
+		assert.NotEmpty(t, p.MaddenAttributes, "2024シーズンはMaddenデータ投入済みのはず")
+		assert.Empty(t, p.Career, "Career は GetByID では埋めない")
+	})
+
+	t.Run("GetByID returns ErrNotFound for unknown id", func(t *testing.T) {
+		_, err := repo.GetByID(ctx, 2147483647)
+		require.ErrorIs(t, err, domain.ErrNotFound)
+	})
+
+	t.Run("ListCareerByPlayerID returns all seasons in descending order", func(t *testing.T) {
+		career, err := repo.ListCareerByPlayerID(ctx, int(allen.PlayerID))
+		require.NoError(t, err)
+		require.NotEmpty(t, career)
+
+		found := false
+		for i, c := range career {
+			if c.RosterID == allen.ID {
+				found = true
+				assert.True(t, c.IsStarter)
+				assert.Equal(t, "QB", c.PositionName)
+			}
+			if i > 0 {
+				assert.GreaterOrEqual(t, career[i-1].Season, c.Season, "season の降順")
+			}
+		}
+		assert.True(t, found, "在籍履歴に自身の roster を含む")
+	})
+
+	t.Run("ListCareerByPlayerID returns empty for unknown player", func(t *testing.T) {
+		career, err := repo.ListCareerByPlayerID(ctx, 2147483647)
+		require.NoError(t, err)
+		assert.Empty(t, career)
 	})
 }
 

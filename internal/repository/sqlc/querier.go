@@ -18,6 +18,8 @@ type Querier interface {
 	// cmd/importrosters（outputs/csv/*.csv から players / rosters を生成するコマンド）専用のクエリ。
 	GetPlayerByIdentity(ctx context.Context, arg GetPlayerByIdentityParams) (*Player, error)
 	GetRosterByPlayerIdentity(ctx context.Context, arg GetRosterByPlayerIdentityParams) (*Roster, error)
+	// starters は該当しない roster もあるため LEFT JOIN（スターターでなければ starter_id が NULL）。
+	GetRosterDetailByID(ctx context.Context, id int32) (*GetRosterDetailByIDRow, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id int32) (*User, error)
 	InsertFormations(ctx context.Context, arg []InsertFormationsParams) (int64, error)
@@ -28,9 +30,13 @@ type Querier interface {
 	InsertTeams(ctx context.Context, arg []InsertTeamsParams) (int64, error)
 	ListFormations(ctx context.Context) ([]*Formation, error)
 	ListPositions(ctx context.Context) ([]*Position, error)
+	// 同じ選手の全シーズンのロスター（在籍履歴）。同一シーズンに複数チームの roster がある場合は team_id 順。
+	ListRosterCareerByPlayerID(ctx context.Context, playerID int32) ([]*ListRosterCareerByPlayerIDRow, error)
 	// GET /api/v1/search/seasons・GET /api/v1/search/teams（検索UIの選択肢を返すAPI）専用のクエリ。
 	ListRosterSeasons(ctx context.Context) ([]int32, error)
-	// GET /api/v1/rosters（season・team_id で絞り込んでロスターを返す API）専用のクエリ。
+	// GET /api/v1/rosters（season・team_id で絞り込んでロスターを返す API）・
+	// GET /api/v1/rosters/{id}（ロスター1件の詳細を返す API）専用のクエリ。
+	// 一覧では madden_attributes は返さない（詳細 API の GetRosterDetailByID でのみ返す）。
 	ListRostersBySeasonTeam(ctx context.Context, arg ListRostersBySeasonTeamParams) ([]*ListRostersBySeasonTeamRow, error)
 	ListTeams(ctx context.Context) ([]*ListTeamsRow, error)
 	PfRelationsExist(ctx context.Context) (bool, error)

@@ -91,7 +91,8 @@ func run() error {
 
 	rosterRepo := repository.NewRosterRepository(pool)
 	listRosters := usecase.NewListRosters(rosterRepo)
-	rosterHandler := handler.NewRosterHandler(listRosters, cfg.AssetBaseURL)
+	getRosterDetail := usecase.NewGetRosterDetail(rosterRepo)
+	rosterHandler := handler.NewRosterHandler(listRosters, getRosterDetail, cfg.AssetBaseURL)
 
 	searchRepo := repository.NewSearchRepository(pool)
 	listSeasons := usecase.NewListSeasons(searchRepo)

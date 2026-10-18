@@ -7,9 +7,165 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const getRosterDetailByID = `-- name: GetRosterDetailByID :one
+SELECT
+    rosters.id,
+    rosters.season,
+    rosters.team_id,
+    rosters.player_id,
+    rosters.position_id,
+    rosters.number,
+    rosters.rating,
+    rosters.experience,
+    rosters.madden_attributes,
+    players.id, players.firstname, players.lastname, players.birthday, players.height, players.weight, players.college, players.drafted_team, players.drafted_round, players.drafted_rank, players.drafted_year, players.image_file, players.created_at, players.updated_at,
+    positions.id, positions.abstract_category, positions.category, positions.name, positions.odflg, positions.created_at, positions.updated_at,
+    teams.id, teams.city, teams.name, teams.conference, teams.area, teams.image_file, teams.back_image_file, teams.created_at, teams.updated_at,
+    starters.id AS starter_id,
+    starters.odflg AS starter_odflg
+FROM rosters
+JOIN players ON players.id = rosters.player_id
+JOIN positions ON positions.id = rosters.position_id
+JOIN teams ON teams.id = rosters.team_id
+LEFT JOIN starters ON starters.roster_id = rosters.id
+WHERE rosters.id = $1
+`
+
+type GetRosterDetailByIDRow struct {
+	ID               int32
+	Season           int32
+	TeamID           int32
+	PlayerID         int32
+	PositionID       int32
+	Number           *int32
+	Rating           *int32
+	Experience       *int32
+	MaddenAttributes []byte
+	Player           Player
+	Position         Position
+	Team             Team
+	StarterID        *int32
+	StarterOdflg     *bool
+}
+
+// starters は該当しない roster もあるため LEFT JOIN（スターターでなければ starter_id が NULL）。
+func (q *Queries) GetRosterDetailByID(ctx context.Context, id int32) (*GetRosterDetailByIDRow, error) {
+	row := q.db.QueryRow(ctx, getRosterDetailByID, id)
+	var i GetRosterDetailByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Season,
+		&i.TeamID,
+		&i.PlayerID,
+		&i.PositionID,
+		&i.Number,
+		&i.Rating,
+		&i.Experience,
+		&i.MaddenAttributes,
+		&i.Player.ID,
+		&i.Player.Firstname,
+		&i.Player.Lastname,
+		&i.Player.Birthday,
+		&i.Player.Height,
+		&i.Player.Weight,
+		&i.Player.College,
+		&i.Player.DraftedTeam,
+		&i.Player.DraftedRound,
+		&i.Player.DraftedRank,
+		&i.Player.DraftedYear,
+		&i.Player.ImageFile,
+		&i.Player.CreatedAt,
+		&i.Player.UpdatedAt,
+		&i.Position.ID,
+		&i.Position.AbstractCategory,
+		&i.Position.Category,
+		&i.Position.Name,
+		&i.Position.Odflg,
+		&i.Position.CreatedAt,
+		&i.Position.UpdatedAt,
+		&i.Team.ID,
+		&i.Team.City,
+		&i.Team.Name,
+		&i.Team.Conference,
+		&i.Team.Area,
+		&i.Team.ImageFile,
+		&i.Team.BackImageFile,
+		&i.Team.CreatedAt,
+		&i.Team.UpdatedAt,
+		&i.StarterID,
+		&i.StarterOdflg,
+	)
+	return &i, err
+}
+
+const listRosterCareerByPlayerID = `-- name: ListRosterCareerByPlayerID :many
+SELECT
+    rosters.id,
+    rosters.season,
+    rosters.number,
+    rosters.rating,
+    rosters.experience,
+    positions.name AS position_name,
+    teams.id, teams.city, teams.name, teams.conference, teams.area, teams.image_file, teams.back_image_file, teams.created_at, teams.updated_at,
+    (starters.id IS NOT NULL)::bool AS is_starter
+FROM rosters
+JOIN positions ON positions.id = rosters.position_id
+JOIN teams ON teams.id = rosters.team_id
+LEFT JOIN starters ON starters.roster_id = rosters.id
+WHERE rosters.player_id = $1
+ORDER BY rosters.season DESC, rosters.team_id
+`
+
+type ListRosterCareerByPlayerIDRow struct {
+	ID           int32
+	Season       int32
+	Number       *int32
+	Rating       *int32
+	Experience   *int32
+	PositionName string
+	Team         Team
+	IsStarter    bool
+}
+
+// 同じ選手の全シーズンのロスター（在籍履歴）。同一シーズンに複数チームの roster がある場合は team_id 順。
+func (q *Queries) ListRosterCareerByPlayerID(ctx context.Context, playerID int32) ([]*ListRosterCareerByPlayerIDRow, error) {
+	rows, err := q.db.Query(ctx, listRosterCareerByPlayerID, playerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListRosterCareerByPlayerIDRow{}
+	for rows.Next() {
+		var i ListRosterCareerByPlayerIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Season,
+			&i.Number,
+			&i.Rating,
+			&i.Experience,
+			&i.PositionName,
+			&i.Team.ID,
+			&i.Team.City,
+			&i.Team.Name,
+			&i.Team.Conference,
+			&i.Team.Area,
+			&i.Team.ImageFile,
+			&i.Team.BackImageFile,
+			&i.Team.CreatedAt,
+			&i.Team.UpdatedAt,
+			&i.IsStarter,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const listRostersBySeasonTeam = `-- name: ListRostersBySeasonTeam :many
 
@@ -22,24 +178,8 @@ SELECT
     rosters.number,
     rosters.rating,
     rosters.experience,
-    rosters.madden_attributes,
-    players.id AS player_table_id,
-    players.firstname,
-    players.lastname,
-    players.birthday,
-    players.height,
-    players.weight,
-    players.college,
-    players.drafted_team,
-    players.drafted_round,
-    players.drafted_rank,
-    players.drafted_year,
-    players.image_file,
-    positions.id AS position_table_id,
-    positions.abstract_category,
-    positions.category,
-    positions.name AS position_name,
-    positions.odflg
+    players.id, players.firstname, players.lastname, players.birthday, players.height, players.weight, players.college, players.drafted_team, players.drafted_round, players.drafted_rank, players.drafted_year, players.image_file, players.created_at, players.updated_at,
+    positions.id, positions.abstract_category, positions.category, positions.name, positions.odflg, positions.created_at, positions.updated_at
 FROM rosters
 JOIN players ON players.id = rosters.player_id
 JOIN positions ON positions.id = rosters.position_id
@@ -76,35 +216,21 @@ type ListRostersBySeasonTeamParams struct {
 }
 
 type ListRostersBySeasonTeamRow struct {
-	ID               int32
-	Season           int32
-	TeamID           int32
-	PlayerID         int32
-	PositionID       int32
-	Number           *int32
-	Rating           *int32
-	Experience       *int32
-	MaddenAttributes []byte
-	PlayerTableID    int32
-	Firstname        string
-	Lastname         string
-	Birthday         string
-	Height           pgtype.Numeric
-	Weight           pgtype.Numeric
-	College          *string
-	DraftedTeam      *string
-	DraftedRound     *string
-	DraftedRank      *string
-	DraftedYear      *int32
-	ImageFile        *string
-	PositionTableID  int32
-	AbstractCategory int32
-	Category         int32
-	PositionName     string
-	Odflg            bool
+	ID         int32
+	Season     int32
+	TeamID     int32
+	PlayerID   int32
+	PositionID int32
+	Number     *int32
+	Rating     *int32
+	Experience *int32
+	Player     Player
+	Position   Position
 }
 
-// GET /api/v1/rosters（season・team_id で絞り込んでロスターを返す API）専用のクエリ。
+// GET /api/v1/rosters（season・team_id で絞り込んでロスターを返す API）・
+// GET /api/v1/rosters/{id}（ロスター1件の詳細を返す API）専用のクエリ。
+// 一覧では madden_attributes は返さない（詳細 API の GetRosterDetailByID でのみ返す）。
 func (q *Queries) ListRostersBySeasonTeam(ctx context.Context, arg ListRostersBySeasonTeamParams) ([]*ListRostersBySeasonTeamRow, error) {
 	rows, err := q.db.Query(ctx, listRostersBySeasonTeam,
 		arg.Season,
@@ -129,24 +255,27 @@ func (q *Queries) ListRostersBySeasonTeam(ctx context.Context, arg ListRostersBy
 			&i.Number,
 			&i.Rating,
 			&i.Experience,
-			&i.MaddenAttributes,
-			&i.PlayerTableID,
-			&i.Firstname,
-			&i.Lastname,
-			&i.Birthday,
-			&i.Height,
-			&i.Weight,
-			&i.College,
-			&i.DraftedTeam,
-			&i.DraftedRound,
-			&i.DraftedRank,
-			&i.DraftedYear,
-			&i.ImageFile,
-			&i.PositionTableID,
-			&i.AbstractCategory,
-			&i.Category,
-			&i.PositionName,
-			&i.Odflg,
+			&i.Player.ID,
+			&i.Player.Firstname,
+			&i.Player.Lastname,
+			&i.Player.Birthday,
+			&i.Player.Height,
+			&i.Player.Weight,
+			&i.Player.College,
+			&i.Player.DraftedTeam,
+			&i.Player.DraftedRound,
+			&i.Player.DraftedRank,
+			&i.Player.DraftedYear,
+			&i.Player.ImageFile,
+			&i.Player.CreatedAt,
+			&i.Player.UpdatedAt,
+			&i.Position.ID,
+			&i.Position.AbstractCategory,
+			&i.Position.Category,
+			&i.Position.Name,
+			&i.Position.Odflg,
+			&i.Position.CreatedAt,
+			&i.Position.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

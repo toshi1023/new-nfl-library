@@ -34,6 +34,7 @@ func New(d Deps) *gin.Engine {
 	v1 := r.Group("/api/v1")
 
 	v1.GET("/rosters", d.Roster.Index)
+	v1.GET("/rosters/:id", d.Roster.Show)
 	v1.GET("/search/seasons", d.Search.Seasons)
 	v1.GET("/search/teams", d.Search.Teams)
 

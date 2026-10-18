@@ -17,6 +17,23 @@ type stubRosterRepository struct {
 	gotSeason, gotTeamID    int
 	gotNames                []string
 	gotSortBy, gotSortOrder string
+
+	profile     domain.RosterProfile
+	getErr      error
+	gotID       int
+	career      []domain.RosterCareer
+	careerErr   error
+	gotPlayerID int
+}
+
+func (s *stubRosterRepository) GetByID(_ context.Context, id int) (domain.RosterProfile, error) {
+	s.gotID = id
+	return s.profile, s.getErr
+}
+
+func (s *stubRosterRepository) ListCareerByPlayerID(_ context.Context, playerID int) ([]domain.RosterCareer, error) {
+	s.gotPlayerID = playerID
+	return s.career, s.careerErr
 }
 
 func (s *stubRosterRepository) ListBySeasonAndTeam(_ context.Context, season, teamID int, names []string, sortBy, sortOrder string) ([]domain.RosterDetail, error) {

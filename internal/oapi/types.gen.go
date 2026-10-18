@@ -132,8 +132,40 @@ type MaddenAttribute struct {
 
 // Roster defines model for Roster.
 type Roster struct {
+	Experience *int           `json:"experience,omitempty"`
+	Id         int            `json:"id"`
+	Number     *int           `json:"number,omitempty"`
+	Player     RosterPlayer   `json:"player"`
+	PlayerId   int            `json:"player_id"`
+	Position   RosterPosition `json:"position"`
+	PositionId int            `json:"position_id"`
+	Rating     *int           `json:"rating,omitempty"`
+	Season     int            `json:"season"`
+	TeamId     int            `json:"team_id"`
+}
+
+// RosterCareer defines model for RosterCareer.
+type RosterCareer struct {
 	Experience *int `json:"experience,omitempty"`
-	Id         int  `json:"id"`
+	IsStarter  bool `json:"is_starter"`
+	Number     *int `json:"number,omitempty"`
+
+	// PositionName Example: QB
+	PositionName string `json:"position_name"`
+	Rating       *int   `json:"rating,omitempty"`
+	RosterId     int    `json:"roster_id"`
+
+	// Season Example: 2024
+	Season int  `json:"season"`
+	Team   Team `json:"team"`
+}
+
+// RosterDetail 一覧の Roster に所属チーム・スターター情報・Madden 評価値・在籍履歴を加えたもの。
+type RosterDetail struct {
+	// Career 同じ選手の全シーズンのロスター（season の降順。自身も含む）
+	Career     []RosterCareer `json:"career"`
+	Experience *int           `json:"experience,omitempty"`
+	Id         int            `json:"id"`
 
 	// MaddenAttributes Madden NFL の評価値CSVのうち、rosters の他の列に対応しない項目一式。
 	MaddenAttributes []MaddenAttribute `json:"madden_attributes"`
@@ -144,7 +176,17 @@ type Roster struct {
 	PositionId       int               `json:"position_id"`
 	Rating           *int              `json:"rating,omitempty"`
 	Season           int               `json:"season"`
-	TeamId           int               `json:"team_id"`
+
+	// Starter スターター情報。スターターでなければ null。
+	Starter *RosterStarter `json:"starter"`
+	Team    Team           `json:"team"`
+	TeamId  int            `json:"team_id"`
+}
+
+// RosterDetailData defines model for RosterDetailData.
+type RosterDetailData struct {
+	// Roster 一覧の Roster に所属チーム・スターター情報・Madden 評価値・在籍履歴を加えたもの。
+	Roster RosterDetail `json:"roster"`
 }
 
 // RosterListData defines model for RosterListData.
@@ -185,6 +227,12 @@ type RosterPosition struct {
 
 	// Odflg 攻守フラグ（1: Offence, 0: Defence）
 	Odflg *int `json:"odflg,omitempty"`
+}
+
+// RosterStarter スターター情報。スターターでなければ null。
+type RosterStarter struct {
+	// Odflg 攻守フラグ（1: Offence, 0: Defence）
+	Odflg int `json:"odflg"`
 }
 
 // Season defines model for Season.

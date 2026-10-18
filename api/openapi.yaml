@@ -121,6 +121,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /api/v1/rosters/{id}:
+    get:
+      operationId: getRosterDetail
+      summary: ロスター1件の詳細（所属チーム・スターター情報・Madden 評価値・在籍履歴）を取得する
+      description: >-
+        GET /api/v1/rosters の一覧で選択されたロスターの詳細を返す。id は一覧の各要素の id（rosters.id）。
+        career には同じ選手（player_id）の全シーズンのロスターを season の降順で含める（自身も含む）。
+      tags: [rosters]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ロスターID（rosters.id）
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        "200":
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/RosterDetailData"
+        "404":
+          description: 指定した id のロスターが存在しない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: パスパラメータが不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorEnvelope"
+        "500":
+          description: サーバー内部エラー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /api/v1/search/seasons:
     get:
       operationId: getSearchSeasons
@@ -253,7 +301,7 @@ components:
     Roster:
       type: object
       required:
-        [id, season, team_id, player_id, position_id, player, position, madden_attributes]
+        [id, season, team_id, player_id, position_id, player, position]
       properties:
         id:
           type: integer
@@ -278,11 +326,6 @@ components:
           $ref: "#/components/schemas/RosterPlayer"
         position:
           $ref: "#/components/schemas/RosterPosition"
-        madden_attributes:
-          type: array
-          description: Madden NFL の評価値CSVのうち、rosters の他の列に対応しない項目一式。
-          items:
-            $ref: "#/components/schemas/MaddenAttribute"
 
     RosterPlayer:
       type: object
@@ -366,6 +409,72 @@ components:
           example: スピード
         value:
           type: string
+
+    # --- /api/v1/rosters/{id} ---
+    RosterDetailData:
+      type: object
+      required: [roster]
+      properties:
+        roster:
+          $ref: "#/components/schemas/RosterDetail"
+
+    RosterDetail:
+      description: 一覧の Roster に所属チーム・スターター情報・Madden 評価値・在籍履歴を加えたもの。
+      allOf:
+        - $ref: "#/components/schemas/Roster"
+        - type: object
+          required: [team, starter, madden_attributes, career]
+          properties:
+            team:
+              $ref: "#/components/schemas/Team"
+            starter:
+              $ref: "#/components/schemas/RosterStarter"
+            madden_attributes:
+              type: array
+              description: Madden NFL の評価値CSVのうち、rosters の他の列に対応しない項目一式。
+              items:
+                $ref: "#/components/schemas/MaddenAttribute"
+            career:
+              type: array
+              description: 同じ選手の全シーズンのロスター（season の降順。自身も含む）
+              items:
+                $ref: "#/components/schemas/RosterCareer"
+
+    RosterStarter:
+      type: object
+      description: スターター情報。スターターでなければ null。
+      nullable: true
+      required: [odflg]
+      properties:
+        odflg:
+          type: integer
+          description: "攻守フラグ（1: Offence, 0: Defence）"
+
+    RosterCareer:
+      type: object
+      required: [roster_id, season, team, position_name, is_starter]
+      properties:
+        roster_id:
+          type: integer
+        season:
+          type: integer
+          example: 2024
+        team:
+          $ref: "#/components/schemas/Team"
+        position_name:
+          type: string
+          example: QB
+        number:
+          type: integer
+          nullable: true
+        rating:
+          type: integer
+          nullable: true
+        experience:
+          type: integer
+          nullable: true
+        is_starter:
+          type: boolean
 
     # --- /api/v1/search/seasons ---
     SeasonListData:

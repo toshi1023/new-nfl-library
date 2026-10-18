@@ -18,17 +18,23 @@ type RosterLister interface {
 	Run(ctx context.Context, season, teamID int, names []string, sortBy, sortOrder string) ([]domain.RosterDetail, error)
 }
 
-// RosterHandler は GET /api/v1/rosters を提供する。
+// RosterDetailGetter はロスター1件の詳細を取得する（internal/usecase.GetRosterDetail が実装）。
+type RosterDetailGetter interface {
+	Run(ctx context.Context, id int) (domain.RosterProfile, error)
+}
+
+// RosterHandler は GET /api/v1/rosters・GET /api/v1/rosters/{id} を提供する。
 type RosterHandler struct {
 	lister RosterLister
+	getter RosterDetailGetter
 	// assetBaseURL は選手画像の配信元URL。空文字なら image_file があっても image_url は組み立てない
 	// （画像配信先がまだ決まっていないため。環境変数 ASSET_BASE_URL で設定する）。
 	assetBaseURL string
 }
 
 // NewRosterHandler は RosterHandler を生成する。
-func NewRosterHandler(lister RosterLister, assetBaseURL string) *RosterHandler {
-	return &RosterHandler{lister: lister, assetBaseURL: assetBaseURL}
+func NewRosterHandler(lister RosterLister, getter RosterDetailGetter, assetBaseURL string) *RosterHandler {
+	return &RosterHandler{lister: lister, getter: getter, assetBaseURL: assetBaseURL}
 }
 
 // rostersQuery は GET /api/v1/rosters のクエリパラメータ。Name は任意（選手名のフリー入力検索）。
@@ -43,19 +49,50 @@ type rostersQuery struct {
 	SortOrder string   `form:"sort_order" binding:"omitempty,oneof=asc desc"`
 }
 
+// rosterURI は GET /api/v1/rosters/{id} のパスパラメータ。
+type rosterURI struct {
+	ID int `uri:"id" binding:"required,min=1"`
+}
+
 // rosterResponse は /api/v1/rosters のレスポンス 1 件分。
 type rosterResponse struct {
-	ID               int32                     `json:"id"`
-	Season           int32                     `json:"season"`
-	TeamID           int32                     `json:"team_id"`
-	PlayerID         int32                     `json:"player_id"`
-	PositionID       int32                     `json:"position_id"`
-	Number           *int32                    `json:"number"`
-	Rating           *int32                    `json:"rating"`
-	Experience       *int32                    `json:"experience"`
-	Player           rosterPlayerResponse      `json:"player"`
-	Position         rosterPositionResponse    `json:"position"`
+	ID         int32                  `json:"id"`
+	Season     int32                  `json:"season"`
+	TeamID     int32                  `json:"team_id"`
+	PlayerID   int32                  `json:"player_id"`
+	PositionID int32                  `json:"position_id"`
+	Number     *int32                 `json:"number"`
+	Rating     *int32                 `json:"rating"`
+	Experience *int32                 `json:"experience"`
+	Player     rosterPlayerResponse   `json:"player"`
+	Position   rosterPositionResponse `json:"position"`
+}
+
+// rosterDetailResponse は /api/v1/rosters/{id} のレスポンス。一覧の rosterResponse の項目
+// （埋め込みでフラットに展開される）に所属チーム・スターター情報・Madden 評価値・在籍履歴を加えたもの。
+type rosterDetailResponse struct {
+	rosterResponse
+	Team             teamResponse              `json:"team"`
+	Starter          *rosterStarterResponse    `json:"starter"`
 	MaddenAttributes []maddenAttributeResponse `json:"madden_attributes"`
+	Career           []rosterCareerResponse    `json:"career"`
+}
+
+// rosterStarterResponse はスターター情報。odflg は rosterPositionResponse と同じく 0/1 で返す。
+type rosterStarterResponse struct {
+	Odflg int `json:"odflg"`
+}
+
+// rosterCareerResponse は在籍履歴1件。
+type rosterCareerResponse struct {
+	RosterID     int32        `json:"roster_id"`
+	Season       int32        `json:"season"`
+	Team         teamResponse `json:"team"`
+	PositionName string       `json:"position_name"`
+	Number       *int32       `json:"number"`
+	Rating       *int32       `json:"rating"`
+	Experience   *int32       `json:"experience"`
+	IsStarter    bool         `json:"is_starter"`
 }
 
 // rosterPlayerResponse は Flutter 側の RosterPlayerResponse（lib/types/api/roster/roster_response.dart）
@@ -115,6 +152,25 @@ func (h *RosterHandler) Index(c *gin.Context) {
 	})
 }
 
+// Show は GET /api/v1/rosters/{id} を処理する。
+func (h *RosterHandler) Show(c *gin.Context) {
+	var uri rosterURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		respondBindError(c, err)
+		return
+	}
+
+	profile, err := h.getter.Run(c.Request.Context(), uri.ID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+
+	respondSuccess(c, "ロスター詳細を取得しました", gin.H{
+		"roster": h.toRosterDetailResponse(profile),
+	})
+}
+
 // splitNames は "name" クエリパラメータをフラットな検索語のリストに変換する。
 // ?name=Josh&name=Allen（繰り返し指定）と ?name=Josh,Allen（カンマ区切りの1つの値）の
 // どちらも ["Josh", "Allen"] になる（両方を組み合わせてもよい）。前後の空白は除き、空の語は捨てる。
@@ -142,17 +198,45 @@ func (h *RosterHandler) toRosterResponses(rosters []domain.RosterDetail) []roste
 
 func (h *RosterHandler) toRosterResponse(r domain.RosterDetail) rosterResponse {
 	return rosterResponse{
-		ID:               r.ID,
-		Season:           r.Season,
-		TeamID:           r.TeamID,
-		PlayerID:         r.PlayerID,
-		PositionID:       r.PositionID,
-		Number:           r.Number,
-		Rating:           r.Rating,
-		Experience:       r.Experience,
-		Player:           h.toPlayerResponse(r.Player),
-		Position:         toPositionResponse(r.Position),
-		MaddenAttributes: toMaddenAttributeResponses(r.MaddenAttributes),
+		ID:         r.ID,
+		Season:     r.Season,
+		TeamID:     r.TeamID,
+		PlayerID:   r.PlayerID,
+		PositionID: r.PositionID,
+		Number:     r.Number,
+		Rating:     r.Rating,
+		Experience: r.Experience,
+		Player:     h.toPlayerResponse(r.Player),
+		Position:   toPositionResponse(r.Position),
+	}
+}
+
+func (h *RosterHandler) toRosterDetailResponse(p domain.RosterProfile) rosterDetailResponse {
+	var starter *rosterStarterResponse
+	if p.Starter != nil {
+		starter = &rosterStarterResponse{Odflg: boolToInt(p.Starter.Odflg)}
+	}
+
+	career := make([]rosterCareerResponse, 0, len(p.Career))
+	for _, rc := range p.Career {
+		career = append(career, rosterCareerResponse{
+			RosterID:     rc.RosterID,
+			Season:       rc.Season,
+			Team:         toTeamResponse(rc.Team),
+			PositionName: rc.PositionName,
+			Number:       rc.Number,
+			Rating:       rc.Rating,
+			Experience:   rc.Experience,
+			IsStarter:    rc.IsStarter,
+		})
+	}
+
+	return rosterDetailResponse{
+		rosterResponse:   h.toRosterResponse(p.RosterDetail),
+		Team:             toTeamResponse(p.Team),
+		Starter:          starter,
+		MaddenAttributes: toMaddenAttributeResponses(p.MaddenAttributes),
+		Career:           career,
 	}
 }
 
@@ -177,10 +261,7 @@ func (h *RosterHandler) toPlayerResponse(p domain.Player) rosterPlayerResponse {
 }
 
 func toPositionResponse(p domain.PositionDetail) rosterPositionResponse {
-	odflg := 0
-	if p.Odflg {
-		odflg = 1
-	}
+	odflg := boolToInt(p.Odflg)
 	abstractCategory := p.AbstractCategory
 	category := p.Category
 	return rosterPositionResponse{
@@ -190,6 +271,14 @@ func toPositionResponse(p domain.PositionDetail) rosterPositionResponse {
 		Name:             p.Name,
 		Odflg:            &odflg,
 	}
+}
+
+// boolToInt は攻守フラグなどの bool を 0/1 に変換する（Dart 側が int? 定義のため）。
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // birthdayYear は "YYYYMMDD" 形式の birthday から年部分を取り出す。Laravel の Player モデルの
